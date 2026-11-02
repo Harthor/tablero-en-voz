@@ -1,0 +1,1058 @@
+<title>Tablero en Voz</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Atkinson+Hyperlegible+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: two columns — board (for the teacher) on the left, command console (for the student) on the right; stacks on phones. */
+:root {
+  --bg: #eceff0;
+  --surface: #ffffff;
+  --ink: #15201d;
+  --muted: #55625d;
+  --line: #cfd6d3;
+  --accent: #1d5bb8;
+  --accent-ink: #ffffff;
+  --sq-light: #e3e7d8;
+  --sq-dark: #7f9874;
+  --hl: rgba(242, 196, 64, .55);
+  --sel: rgba(29, 91, 184, .45);
+  --ok: #1d7a46;
+  --warn: #a4471b;
+  --font-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Atkinson Hyperlegible Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101513; --surface: #19201d; --ink: #e6ece9; --muted: #9aa8a2; --line: #2d3733;
+    --accent: #84b2ff; --accent-ink: #0d1626; --sq-light: #bcc6ae; --sq-dark: #5f7655;
+    --hl: rgba(242, 196, 64, .5); --sel: rgba(132, 178, 255, .5); --ok: #5fcf8e; --warn: #ff9a6b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101513; --surface: #19201d; --ink: #e6ece9; --muted: #9aa8a2; --line: #2d3733;
+  --accent: #84b2ff; --accent-ink: #0d1626; --sq-light: #bcc6ae; --sq-dark: #5f7655;
+  --hl: rgba(242, 196, 64, .5); --sel: rgba(132, 178, 255, .5); --ok: #5fcf8e; --warn: #ff9a6b;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 17px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 40px;
+}
+.wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 20px; }
+h1 { font-size: 2rem; margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0; }
+.grid { display: grid; grid-template-columns: minmax(0, 460px) minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 880px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; min-width: 0; }
+h2 { font-size: 1rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; }
+
+/* board */
+.boardwrap { display: flex; flex-direction: column; gap: 10px; }
+.board { display: grid; grid-template-columns: 22px repeat(8, 1fr); grid-template-rows: repeat(8, 1fr) 22px; width: 100%; max-width: 100%; aspect-ratio: 1 / 1; }
+.sq { border: 0; padding: 0; margin: 0; position: relative; display: grid; place-items: center; cursor: pointer;
+  font-size: clamp(22px, 7.4vw, 44px); line-height: 1; font-family: "Segoe UI Symbol", "DejaVu Sans", "Noto Sans Symbols 2", serif; }
+@media (min-width: 881px) { .sq { font-size: 40px; } }
+.sq.l { background: var(--sq-light); } .sq.d { background: var(--sq-dark); }
+.sq.hl::after { content: ""; position: absolute; inset: 0; background: var(--hl); pointer-events: none; }
+.sq.sel::after { content: ""; position: absolute; inset: 0; background: var(--sel); pointer-events: none; }
+.sq:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; z-index: 1; }
+.pc { position: relative; z-index: 2; }
+.pc.w { color: #ffffff; -webkit-text-stroke: 1.4px #1a1a1a; paint-order: stroke fill; }
+.pc.b { color: #161616; -webkit-text-stroke: .6px #161616; }
+.coord { display: grid; place-items: center; font-family: var(--font-mono); font-size: 13px; color: var(--muted); }
+.navrow { display: flex; flex-wrap: wrap; gap: 8px; }
+.meta { font-size: .95rem; color: var(--muted); min-height: 1.5em; overflow-wrap: anywhere; }
+.meta strong { color: var(--ink); }
+
+/* console */
+.console { display: flex; flex-direction: column; gap: 16px; }
+label.big { font-weight: 700; font-size: 1.1rem; display: block; margin-bottom: 6px; }
+#cmd { width: 100%; font: 600 1.6rem/1.2 var(--font-mono); padding: 14px 16px; border-radius: 8px; border: 2px solid var(--line);
+  background: var(--bg); color: var(--ink); }
+#cmd:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--sel); }
+.hint { font-size: .92rem; color: var(--muted); margin: 6px 0 0; }
+#out { font-size: 1.35rem; line-height: 1.45; min-height: 4.4em; padding: 14px 16px; border-radius: 8px; background: var(--bg);
+  border: 1px solid var(--line); white-space: pre-line; overflow-wrap: anywhere; }
+#out.err { color: var(--warn); }
+.quick { display: flex; flex-wrap: wrap; gap: 8px; }
+button.btn { font: 600 1rem var(--font-body); padding: 9px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface);
+  color: var(--ink); cursor: pointer; }
+button.btn:hover { border-color: var(--accent); }
+button.btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+button.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+details { border-top: 1px solid var(--line); padding-top: 12px; }
+summary { cursor: pointer; font-weight: 700; font-size: 1.05rem; padding: 4px 0; }
+summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.dbody { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; }
+textarea, input[type=text], select { font: 1rem var(--font-mono); padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--ink); width: 100%; }
+textarea { min-height: 110px; resize: vertical; }
+textarea:focus, input[type=text]:focus, select:focus { outline: 3px solid var(--sel); border-color: var(--accent); }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.row > * { min-width: 0; }
+.field { display: flex; flex-direction: column; gap: 4px; flex: 1 1 200px; }
+.field span { font-size: .92rem; color: var(--muted); }
+.check { display: flex; gap: 8px; align-items: center; }
+.check input { width: 20px; height: 20px; accent-color: var(--accent); }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+td code, .mono { font-family: var(--font-mono); white-space: nowrap; }
+th { color: var(--muted); font-weight: 700; font-size: .85rem; text-transform: uppercase; letter-spacing: .05em; }
+#log { max-height: 260px; overflow-y: auto; font-size: .95rem; display: flex; flex-direction: column; gap: 6px; }
+#log p { margin: 0; padding-bottom: 6px; border-bottom: 1px dashed var(--line); overflow-wrap: anywhere; }
+#log .q { font-family: var(--font-mono); color: var(--accent); }
+.badge { display: inline-block; font: 600 .8rem var(--font-mono); padding: 2px 8px; border-radius: 99px; background: var(--bg); border: 1px solid var(--line); color: var(--muted); }
+.badge.live { color: var(--ok); border-color: var(--ok); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Tablero en Voz</h1>
+      <p class="sub">Lectura exacta de posiciones de ajedrez, en voz alta. La posición sale de la partida, nunca de una imagen.</p>
+    </div>
+    <span class="badge" id="mode">Posición inicial</span>
+  </header>
+
+  <div class="grid">
+    <section class="panel boardwrap" aria-label="Tablero visual">
+      <div class="board" id="board" role="grid" aria-label="Tablero. Cada casilla se lee al tocarla."></div>
+      <div class="navrow" aria-label="Navegación de la partida">
+        <button class="btn" data-cmd="inicio" title="Inicio">⏮ Inicio</button>
+        <button class="btn" data-cmd="a" title="Anterior (flecha izquierda)">◀ Anterior</button>
+        <button class="btn" data-cmd="s" title="Siguiente (flecha derecha)">Siguiente ▶</button>
+        <button class="btn" data-cmd="fin" title="Final">Final ⏭</button>
+        <button class="btn" data-cmd="girar">Girar</button>
+      </div>
+      <div class="meta" id="meta"></div>
+    </section>
+
+    <section class="panel console" aria-label="Consola">
+      <div>
+        <label class="big" for="cmd">Comando o jugada</label>
+        <input id="cmd" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="cmdhint" placeholder="ayuda">
+        <p class="hint" id="cmdhint">Escribí y apretá Enter. Con el campo vacío: flechas izquierda y derecha recorren la partida, flecha arriba repite comandos, Escape calla la voz. Escribí <span class="mono">ayuda</span> para escuchar los comandos.</p>
+      </div>
+      <div id="out" role="status" aria-live="polite" aria-atomic="true"></div>
+      <div class="quick" aria-label="Comandos rápidos">
+        <button class="btn" data-cmd="b">Piezas blancas</button>
+        <button class="btn" data-cmd="n">Piezas negras</button>
+        <button class="btn" data-cmd="t">Tablero completo</button>
+        <button class="btn" data-cmd="u">Última jugada</button>
+        <button class="btn" data-cmd="estado">Estado</button>
+        <button class="btn" data-cmd="amenazas">Amenazas</button>
+        <button class="btn" data-cmd="material">Material</button>
+        <button class="btn" data-cmd="r">Repetir</button>
+        <button class="btn" id="testvoice2">Probar voz</button>
+      </div>
+
+      <details open>
+        <summary>Cargar partida o posición</summary>
+        <div class="dbody">
+          <div class="field">
+            <span>Pegá un link de Lichess, un FEN o un PGN</span>
+            <textarea id="loadbox" spellcheck="false" aria-label="Link de Lichess, FEN o PGN"></textarea>
+          </div>
+          <div class="row">
+            <button class="btn primary" id="loadbtn">Cargar</button>
+            <button class="btn" id="startbtn">Posición inicial</button>
+            <button class="btn" id="dailybtn">Puzzle diario de Lichess</button>
+          </div>
+          <div class="row">
+            <div class="field">
+              <span>Seguir la partida en curso de un usuario de Lichess</span>
+              <input type="text" id="userbox" placeholder="nombre de usuario" autocomplete="off" spellcheck="false">
+            </div>
+            <button class="btn" id="userbtn" style="align-self:flex-end">Seguir</button>
+          </div>
+          <p class="hint">Los links de análisis o editor de Lichess (los que traen el FEN en la dirección) funcionan siempre. Los links a partidas, el puzzle diario y el seguimiento en vivo necesitan conectarse a Lichess: si esta página no puede, copiá el PGN desde “Compartir y exportar” en Lichess y pegalo acá.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Voz y ajustes</summary>
+        <div class="dbody">
+          <div class="row"><button class="btn primary" id="testvoice">Probar voz</button><span class="hint" id="vstat" role="status">Todavía no habló.</span></div>
+          <label class="check"><input type="checkbox" id="ttson" checked> Hablar con voz propia (desactivalo si el alumno usa lector de pantalla como NVDA o VoiceOver, para que no se pisen)</label>
+          <div class="row">
+            <div class="field"><span>Voz</span><select id="voicesel"></select></div>
+            <div class="field"><span>Velocidad: <b id="ratev">1.0</b></span><input type="range" id="rate" min="0.6" max="2" step="0.1" value="1"></div>
+          </div>
+          <div class="row">
+            <div class="field"><span>Notación al escribir jugadas</span>
+              <select id="notation"><option value="es">Española (R D T A C)</option><option value="en">Inglesa (K Q R B N)</option></select>
+            </div>
+            <div class="field"><span>Leer el tablero desde el lado de</span>
+              <select id="persp"><option value="w">Blancas</option><option value="b">Negras</option></select>
+            </div>
+          </div>
+          <label class="check"><input type="checkbox" id="autoread"> Al avanzar una jugada, decir también si quedó alguna pieza atacada sin defensa</label>
+        </div>
+      </details>
+
+      <details>
+        <summary>Comandos</summary>
+        <div class="dbody tablewrap">
+          <table>
+            <thead><tr><th>Escribir</th><th>Qué hace</th></tr></thead>
+            <tbody id="helptable"></tbody>
+          </table>
+        </div>
+      </details>
+
+      <details>
+        <summary>Historial</summary>
+        <div class="dbody"><div id="log" aria-label="Historial de respuestas"></div></div>
+      </details>
+    </section>
+  </div>
+</div>
+
+<script>
+// Load chess.js with a fallback CDN.
+(function () {
+  function load(src, next) {
+    var s = document.createElement('script'); s.src = src; s.async = false;
+    s.onload = function () { window.dispatchEvent(new Event('chessready')); };
+    s.onerror = next || function () { document.getElementById('out').textContent = 'No se pudo cargar el motor de reglas. Revisá la conexión y recargá la página.'; };
+    document.head.appendChild(s);
+  }
+  load('https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js', function () {
+    load('https://cdn.jsdelivr.net/npm/chess.js@0.10.3/chess.min.js');
+  });
+})();
+</script>
+
+<script id="core">
+// ======================= CORE (pure logic, no DOM) =======================
+var FILES = 'abcdefgh';
+var START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+var NAMES = { k: ['rey', 'reyes', 'm'], q: ['dama', 'damas', 'f'], r: ['torre', 'torres', 'f'], b: ['alfil', 'alfiles', 'm'], n: ['caballo', 'caballos', 'm'], p: ['peón', 'peones', 'm'] };
+var VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+var ORDER = ['k', 'q', 'r', 'b', 'n', 'p'];
+var ORTH = [[1, 0], [-1, 0], [0, 1], [0, -1]], DIAG = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+
+function adj(color, gender, plural) {
+  var w = color === 'w';
+  if (gender === 'f') return w ? (plural ? 'blancas' : 'blanca') : (plural ? 'negras' : 'negra');
+  return w ? (plural ? 'blancos' : 'blanco') : (plural ? 'negros' : 'negro');
+}
+function pieceName(p) { var n = NAMES[p.type]; return n[0] + ' ' + adj(p.color, n[2], false); }
+function sideName(c) { return c === 'w' ? 'blancas' : 'negras'; }
+function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+function joinY(a) { if (a.length <= 1) return a.join(''); return a.slice(0, -1).join(', ') + ' y ' + a[a.length - 1]; }
+function fileOf(sq) { return FILES.indexOf(sq[0]); }
+function rankOf(sq) { return +sq[1] - 1; }
+function toSq(f, r) { return (f >= 0 && f < 8 && r >= 0 && r < 8) ? FILES[f] + (r + 1) : null; }
+function sqShade(sq) { return (fileOf(sq) + rankOf(sq) + 1) % 2 === 1 ? 'oscura' : 'clara'; }
+function bySquare(a, b) { return fileOf(a) - fileOf(b) || rankOf(a) - rankOf(b); }
+
+function boardMap(chess) {
+  var m = {}, b = chess.board();
+  for (var r = 0; r < 8; r++) for (var c = 0; c < 8; c++) if (b[r][c]) m[FILES[c] + (8 - r)] = b[r][c];
+  return m;
+}
+
+// Squares a piece attacks (pseudo-legal control, ignores pins).
+function controlled(map, from) {
+  var p = map[from], f = fileOf(from), r = rankOf(from), out = [];
+  function step(dirs, slide) {
+    dirs.forEach(function (d) {
+      var x = f + d[0], y = r + d[1];
+      while (true) { var s = toSq(x, y); if (!s) break; out.push(s); if (!slide || map[s]) break; x += d[0]; y += d[1]; }
+    });
+  }
+  switch (p.type) {
+    case 'p': var dy = p.color === 'w' ? 1 : -1; [toSq(f - 1, r + dy), toSq(f + 1, r + dy)].forEach(function (s) { if (s) out.push(s); }); break;
+    case 'n': step([[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]], false); break;
+    case 'k': step(ORTH.concat(DIAG), false); break;
+    case 'b': step(DIAG, true); break;
+    case 'r': step(ORTH, true); break;
+    case 'q': step(ORTH.concat(DIAG), true); break;
+  }
+  return out;
+}
+function attackersOf(map, sq, color) {
+  return Object.keys(map).filter(function (s) { return map[s].color === color && controlled(map, s).indexOf(sq) >= 0; })
+    .sort(function (a, b) { return VALUE[map[a].type] - VALUE[map[b].type] || bySquare(a, b); });
+}
+function shortPiece(map, s) { return NAMES[map[s].type][0] + ' ' + s; }
+
+function listPieces(map, color) {
+  var groups = {}; ORDER.forEach(function (t) { groups[t] = []; });
+  Object.keys(map).forEach(function (s) { if (map[s].color === color) groups[map[s].type].push(s); });
+  var parts = [], total = 0;
+  ORDER.forEach(function (t) {
+    var sqs = groups[t].sort(bySquare); total += sqs.length;
+    if (!sqs.length) return;
+    parts.push((sqs.length === 1 ? NAMES[t][0] : NAMES[t][1]) + ' en ' + joinY(sqs));
+  });
+  return cap(sideName(color)) + ', ' + total + (total === 1 ? ' pieza' : ' piezas') + ': ' + parts.join('; ') + '.';
+}
+
+// Read a line of squares, merging runs of empty squares.
+function lineText(map, sqs) {
+  var parts = [], run = [];
+  function flush() {
+    if (!run.length) return;
+    parts.push(run.length === 1 ? run[0] + ' vacía' : run[0] + (run.length === 2 ? ' y ' : ' a ') + run[run.length - 1] + ' vacías');
+    run = [];
+  }
+  sqs.forEach(function (s) { if (map[s]) { flush(); parts.push(s + ' ' + pieceName(map[s])); } else run.push(s); });
+  flush();
+  if (parts.length === 1 && !sqs.some(function (s) { return map[s]; })) return 'vacía';
+  return parts.join(', ');
+}
+function rankSquares(rank, persp) { var a = []; for (var f = 0; f < 8; f++) a.push(FILES[f] + rank); return persp === 'b' ? a.reverse() : a; }
+function fileSquares(file, persp) { var a = []; for (var r = 1; r <= 8; r++) a.push(file + r); return persp === 'b' ? a.reverse() : a; }
+function rankText(map, rank, persp) { return 'Fila ' + rank + ': ' + lineText(map, rankSquares(rank, persp)) + '.'; }
+function fileText(map, file, persp) { return 'Columna ' + file + ': ' + lineText(map, fileSquares(file, persp)) + '.'; }
+function boardText(map, persp) {
+  var ranks = persp === 'b' ? [1, 2, 3, 4, 5, 6, 7, 8] : [8, 7, 6, 5, 4, 3, 2, 1], out = [], empties = [];
+  ranks.forEach(function (r) {
+    var any = rankSquares(r, persp).some(function (s) { return map[s]; });
+    if (!any) { empties.push(r); return; }
+    if (empties.length) { out.push(empties.length === 1 ? 'Fila ' + empties[0] + ' vacía.' : 'Filas ' + joinY(empties.map(String)) + ' vacías.'); empties = []; }
+    out.push(rankText(map, r, persp));
+  });
+  if (empties.length) out.push(empties.length === 1 ? 'Fila ' + empties[0] + ' vacía.' : 'Filas ' + joinY(empties.map(String)) + ' vacías.');
+  return 'Tablero desde ' + sideName(persp) + '.\n' + out.join('\n');
+}
+
+function squareText(map, sq) {
+  var p = map[sq];
+  return sq + ': ' + (p ? pieceName(p) : 'vacía') + '. Casilla ' + sqShade(sq) + '.';
+}
+
+function attackText(map, sq) {
+  var w = attackersOf(map, sq, 'w'), b = attackersOf(map, sq, 'b');
+  function fmt(list) { return list.length ? joinY(list.map(function (s) { return shortPiece(map, s); })) : 'ninguna'; }
+  var head = map[sq] ? sq + ' tiene ' + pieceName(map[sq]) + '. ' : sq + ' está vacía. ';
+  return head + 'La controlan las blancas con: ' + fmt(w) + '. Las negras con: ' + fmt(b) + '.';
+}
+
+function pieceSightText(chess, map, sq) {
+  var p = map[sq];
+  if (!p) return sq + ' está vacía.';
+  var ctrl = controlled(map, sq).sort(bySquare);
+  var hits = ctrl.filter(function (s) { return map[s] && map[s].color !== p.color; }).map(function (s) { return shortPiece(map, s); });
+  var defs = ctrl.filter(function (s) { return map[s] && map[s].color === p.color; }).map(function (s) { return shortPiece(map, s); });
+  var t = cap(pieceName(p)) + ' en ' + sq + '. ';
+  t += 'Controla ' + ctrl.length + (ctrl.length === 1 ? ' casilla: ' : ' casillas: ') + (ctrl.length ? joinY(ctrl) : 'ninguna') + '. ';
+  t += 'Ataca: ' + (hits.length ? joinY(hits) : 'nada') + '. Defiende: ' + (defs.length ? joinY(defs) : 'nada') + '.';
+  if (p.color === chess.turn()) {
+    var mv = chess.moves({ square: sq, verbose: true });
+    t += ' Jugadas legales: ' + (mv.length ? joinY(mv.map(moveWords)) : 'ninguna, está bloqueada o clavada') + '.';
+  }
+  var att = attackersOf(map, sq, p.color === 'w' ? 'b' : 'w');
+  if (att.length) t += ' Está atacad' + (NAMES[p.type][2] === 'f' ? 'a' : 'o') + ' por ' + joinY(att.map(function (s) { return shortPiece(map, s); })) + '.';
+  return t;
+}
+
+// Pieces under attack, for both sides.
+function threatsText(map) {
+  var out = [];
+  ['w', 'b'].forEach(function (c) {
+    var opp = c === 'w' ? 'b' : 'w', items = [];
+    Object.keys(map).sort(bySquare).forEach(function (s) {
+      var p = map[s]; if (p.color !== c || p.type === 'k') return;
+      var att = attackersOf(map, s, opp); if (!att.length) return;
+      var def = attackersOf(map, s, c);
+      var cheaper = att.some(function (a) { return VALUE[map[a].type] < VALUE[p.type]; });
+      var o = NAMES[p.type][2] === 'f' ? 'a' : 'o';
+      var tag = !def.length ? 'sin defensa' : (cheaper ? 'defendid' + o + ', pero el atacante vale menos' : 'defendid' + o);
+      items.push(NAMES[p.type][0] + ' ' + s + ', atacad' + o + ' por ' + joinY(att.map(function (a) { return shortPiece(map, a); })) + ', ' + tag);
+    });
+    out.push(cap(sideName(c)) + ': ' + (items.length ? items.join('; ') : 'ninguna pieza atacada') + '.');
+  });
+  return out.join('\n');
+}
+function hangingShort(map) {
+  var items = [];
+  Object.keys(map).sort(bySquare).forEach(function (s) {
+    var p = map[s]; if (p.type === 'k') return;
+    var opp = p.color === 'w' ? 'b' : 'w';
+    if (attackersOf(map, s, opp).length && !attackersOf(map, s, p.color).length) items.push(pieceName(p) + ' en ' + s);
+  });
+  return items.length ? 'Atacadas sin defensa: ' + joinY(items) + '.' : '';
+}
+
+function materialText(map) {
+  var cnt = { w: {}, b: {} }, pts = { w: 0, b: 0 };
+  Object.keys(map).forEach(function (s) { var p = map[s]; cnt[p.color][p.type] = (cnt[p.color][p.type] || 0) + 1; pts[p.color] += VALUE[p.type]; });
+  function side(c) {
+    var parts = [];
+    ['q', 'r', 'b', 'n', 'p'].forEach(function (t) { var n = cnt[c][t] || 0; if (n) parts.push(n + ' ' + (n === 1 ? NAMES[t][0] : NAMES[t][1])); });
+    return cap(sideName(c)) + ': ' + (parts.length ? joinY(parts) : 'solo el rey') + ', ' + pts[c] + ' puntos.';
+  }
+  var d = pts.w - pts.b;
+  var bal = d === 0 ? 'Material igualado.' : (d > 0 ? 'Blancas' : 'Negras') + ' tienen ' + Math.abs(d) + (Math.abs(d) === 1 ? ' punto' : ' puntos') + ' de ventaja.';
+  return side('w') + '\n' + side('b') + '\n' + bal;
+}
+
+function castleText(fen) {
+  var c = fen.split(' ')[2], parts = [];
+  if (c.indexOf('K') >= 0 || c.indexOf('Q') >= 0) parts.push('blancas pueden enrocar ' + joinY([c.indexOf('K') >= 0 ? 'corto' : null, c.indexOf('Q') >= 0 ? 'largo' : null].filter(Boolean)));
+  if (c.indexOf('k') >= 0 || c.indexOf('q') >= 0) parts.push('negras pueden enrocar ' + joinY([c.indexOf('k') >= 0 ? 'corto' : null, c.indexOf('q') >= 0 ? 'largo' : null].filter(Boolean)));
+  return parts.length ? cap(parts.join('; ')) + '.' : 'Ningún bando puede enrocar.';
+}
+
+function statusText(chess) {
+  var t = 'Juegan ' + sideName(chess.turn()) + '.';
+  if (chess.in_checkmate()) t = 'Jaque mate. Ganan ' + sideName(chess.turn() === 'w' ? 'b' : 'w') + '.';
+  else if (chess.in_stalemate()) t = 'Rey ahogado. Tablas.';
+  else if (chess.insufficient_material()) t = 'Tablas por material insuficiente.';
+  else if (chess.in_threefold_repetition()) t += ' Posición repetida tres veces.';
+  else if (chess.in_check()) t += ' Están en jaque.';
+  return t;
+}
+
+// Natural-language move: "Caballo de g1 a f3".
+function moveSentence(m) {
+  var t;
+  if (m.flags.indexOf('k') >= 0) t = 'enroque corto';
+  else if (m.flags.indexOf('q') >= 0) t = 'enroque largo';
+  else {
+    t = NAMES[m.piece][0] + ' de ' + m.from + ' a ' + m.to;
+    if (m.flags.indexOf('e') >= 0) t += ', captura peón al paso';
+    else if (m.captured) t += ', captura ' + NAMES[m.captured][0];
+    if (m.promotion) t += ', corona ' + NAMES[m.promotion][0];
+  }
+  if (/#$/.test(m.san)) t += '. Jaque mate';
+  else if (/\+$/.test(m.san)) t += '. Jaque';
+  return cap(t);
+}
+// Compact spoken move: "caballo por e5, jaque".
+function moveWords(m) {
+  var t;
+  if (m.flags.indexOf('k') >= 0) t = 'enroque corto';
+  else if (m.flags.indexOf('q') >= 0) t = 'enroque largo';
+  else if (m.piece === 'p') t = (m.captured ? m.from[0] + ' por ' : '') + m.to + (m.promotion ? ' corona ' + NAMES[m.promotion][0] : '');
+  else t = NAMES[m.piece][0] + (m.captured ? ' por ' : ' ') + m.to;
+  if (/#$/.test(m.san)) t += ' mate'; else if (/\+$/.test(m.san)) t += ' jaque';
+  return t;
+}
+var ES_SAN = { K: 'R', Q: 'D', R: 'T', B: 'A', N: 'C' };
+function sanEs(san) { return san.replace(/[KQRBN]/g, function (c) { return ES_SAN[c]; }); }
+
+// Parse a typed move. Returns the chess.js move object (already played) or null.
+function tryMove(chess, raw, notation) {
+  var s = raw.trim().replace(/\s+/g, '').replace(/[!?]+$/, '').replace(/0/g, 'O').replace(/o-o/ig, function (x) { return x.toUpperCase(); });
+  if (!s) return null;
+  var promo = { q: 'q', d: 'q', r: 'r', t: 'r', b: 'b', a: 'b', n: 'n', c: 'n' };
+  var co = s.toLowerCase().match(/^([a-h][1-8])[-x:]?([a-h][1-8])=?([qrbndtac])?$/);
+  if (co) { var mv = chess.move({ from: co[1], to: co[2], promotion: co[3] ? promo[co[3]] : 'q' }); if (mv) return mv; }
+  if (/^O-O(-O)?[+#]?$/i.test(s)) return chess.move(s.toUpperCase().replace(/[+#]$/, ''));
+  var map = notation === 'es' ? { R: 'K', D: 'Q', T: 'R', A: 'B', C: 'N', K: 'K', Q: 'Q', B: 'B', N: 'N' } : { K: 'K', Q: 'Q', R: 'R', B: 'B', N: 'N' };
+  var pieceLetters = Object.keys(map);
+  function translate(x) {
+    var y = x;
+    if (pieceLetters.indexOf(y[0]) >= 0) y = map[y[0]] + y.slice(1);
+    y = y.replace(/=([A-Za-z])/, function (_, l) { var L = l.toUpperCase(); return '=' + (map[L] || L); });
+    return y;
+  }
+  var cands = [translate(s)];
+  if (/^[a-z]/.test(s) && pieceLetters.indexOf(s[0].toUpperCase()) >= 0) cands.push(translate(s[0].toUpperCase() + s.slice(1)));
+  for (var i = 0; i < cands.length; i++) {
+    var m = chess.move(cands[i], { sloppy: true });
+    if (m) return m;
+  }
+  return null;
+}
+
+// Parse what the user loaded: Lichess URL, FEN, or PGN.
+function classifyInput(txt) {
+  var s = txt.trim();
+  if (!s) return { kind: 'empty' };
+  var url = s.match(/lichess\.org\/([^\s?#]*)/i);
+  if (url) {
+    var path = decodeURIComponent(url[1]);
+    var an = path.match(/^(?:analysis|editor)\/(?:standard\/|fromPosition\/)?(.+)$/i);
+    if (an) return { kind: 'fen', fen: an[1].replace(/_/g, ' ').replace(/\/(white|black)$/, '') };
+    var pz = path.match(/^training\/([A-Za-z0-9]{5,})/i);
+    if (pz) return { kind: 'puzzle', id: pz[1] };
+    var g = path.match(/^([A-Za-z0-9]{8})(?:[A-Za-z0-9]{4})?(?:\/(white|black))?/);
+    if (g && !/^(analysis|editor|training|study|broadcast)$/i.test(g[1])) return { kind: 'game', id: g[1], side: g[2] };
+    return { kind: 'unknown' };
+  }
+  if (/^[rnbqkpRNBQKP1-8]+(\/[rnbqkpRNBQKP1-8]+){7}(\s|$)/.test(s)) return { kind: 'fen', fen: s };
+  if (/^[A-Za-z0-9]{8}$/.test(s)) return { kind: 'game', id: s };
+  return { kind: 'pgn', pgn: s };
+}
+function completeFen(f) {
+  var parts = f.trim().split(/\s+/);
+  var d = ['w', '-', '-', '0', '1'];
+  while (parts.length < 6) parts.push(d[parts.length - 1]);
+  return parts.slice(0, 6).join(' ');
+}
+
+// Spoken form: spell out file letters so TTS says "efe 3" and not "f3" garbled.
+var LETTER = { a: 'a', b: 'be', c: 'ce', d: 'de', e: 'e', f: 'efe', g: 'ge', h: 'hache' };
+function toSpeech(t) {
+  return t.replace(/\b([a-h])([1-8])\b/g, function (_, l, n) { return LETTER[l] + ' ' + n; })
+          .replace(/\bcolumna ([a-h])\b/gi, function (_, l) { return 'columna ' + LETTER[l.toLowerCase()]; })
+          .replace(/\b([a-h]) por\b/g, function (_, l) { return LETTER[l] + ' por'; });
+}
+</script>
+
+<script>
+// ======================= APP (state + DOM) =======================
+var G = { startFen: START_FEN, main: [], fens: [START_FEN], ply: 0, varBase: null, varMoves: [], varFens: [], persp: 'w', headers: {}, title: 'Posición inicial', live: null, puzzle: null, selected: null };
+var S = { tts: true, rate: 1, voiceName: '', notation: 'es', autoread: false };
+var cmdHist = [], histIdx = -1, lastSpoken = '';
+var $ = function (id) { return document.getElementById(id); };
+
+function store(k, v) { try { localStorage.setItem('tev_' + k, JSON.stringify(v)); } catch (e) {} }
+function recall(k, d) { try { var v = localStorage.getItem('tev_' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } }
+
+// ---------- voice ----------
+var voices = [];
+function pickVoices() {
+  if (!window.speechSynthesis) return;
+  voices = speechSynthesis.getVoices().filter(function (v) { return /^es/i.test(v.lang); });
+  var rank = ['es-AR', 'es-US', 'es-419', 'es-MX', 'es-ES'];
+  voices.sort(function (a, b) {
+    var ra = rank.indexOf(a.lang.replace('_', '-')), rb = rank.indexOf(b.lang.replace('_', '-'));
+    return (ra < 0 ? 9 : ra) - (rb < 0 ? 9 : rb);
+  });
+  var sel = $('voicesel'); sel.innerHTML = '';
+  if (!voices.length) { var o = document.createElement('option'); o.value = ''; o.textContent = 'Voz del sistema'; sel.appendChild(o); if (speechSynthesis.getVoices().length) voiceStatus('Este navegador no tiene voces en español; va a usar la voz por defecto.'); return; }
+  voices.forEach(function (v) { var o = document.createElement('option'); o.value = v.name; o.textContent = v.name + ' (' + v.lang + ')'; sel.appendChild(o); });
+  if (S.voiceName && voices.some(function (v) { return v.name === S.voiceName; })) sel.value = S.voiceName;
+}
+function voiceStatus(t) { var el = $('vstat'); if (el) el.textContent = t; }
+var liveUtterances = [];
+function speak(text) {
+  if (!S.tts || !window.speechSynthesis) return;
+  var ss = window.speechSynthesis;
+  try {
+    if (!voices.length) pickVoices();
+    var v = voices.find(function (x) { return x.name === $('voicesel').value; }) || voices[0];
+    var chunks = toSpeech(text).replace(/([.;:])\s+/g, '$1\n').split(/\n+/).filter(function (x) { return x.trim(); });
+    var go = function () {
+      ss.resume();
+      liveUtterances = chunks.map(function (chunk) {
+        var u = new SpeechSynthesisUtterance(chunk);
+        u.lang = v ? v.lang : 'es-ES'; if (v) u.voice = v; u.rate = S.rate;
+        u.onerror = function (e) { if (e.error !== 'interrupted' && e.error !== 'canceled') voiceStatus('La voz dio un error: ' + e.error + '. Probá otra voz de la lista.'); };
+        u.onstart = function () { voiceStatus('Voz funcionando' + (v ? ': ' + v.name + '.' : ' (voz por defecto del sistema).')); };
+        return u;
+      });
+      // Keep references: Chrome can drop utterances that get garbage-collected.
+      liveUtterances.forEach(function (u) { ss.speak(u); });
+    };
+    // Chrome drops a speak() issued in the same tick as cancel(), so wait a moment after cancelling.
+    if (ss.speaking || ss.pending) { ss.cancel(); setTimeout(go, 150); } else go();
+  } catch (e) { voiceStatus('No se pudo usar la voz: ' + e.message); }
+}
+function hush() { if (window.speechSynthesis) speechSynthesis.cancel(); }
+
+function say(text, opts) {
+  opts = opts || {};
+  lastSpoken = text;
+  var out = $('out'); out.textContent = text; out.classList.toggle('err', !!opts.err);
+  speak(text);
+  var p = document.createElement('p');
+  if (opts.q) { var q = document.createElement('span'); q.className = 'q'; q.textContent = '› ' + opts.q + '  '; p.appendChild(q); }
+  p.appendChild(document.createTextNode(text));
+  var log = $('log'); log.insertBefore(p, log.firstChild);
+  while (log.children.length > 80) log.removeChild(log.lastChild);
+}
+
+// ---------- position helpers ----------
+function inVar() { return G.varBase !== null; }
+function curFen() { return inVar() ? (G.varFens.length ? G.varFens[G.varFens.length - 1] : G.fens[G.varBase]) : G.fens[G.ply]; }
+function curChess() { var c = new Chess(); c.load(curFen()); return c; }
+function lastMove() {
+  if (inVar()) return G.varMoves.length ? G.varMoves[G.varMoves.length - 1] : (G.varBase > 0 ? G.main[G.varBase - 1] : null);
+  return G.ply > 0 ? G.main[G.ply - 1] : null;
+}
+function fenTurnNum(fen) { var p = fen.split(' '); return { turn: p[1], num: +p[5] || 1 }; }
+function numberForFen(fen) { var t = fenTurnNum(fen); return t.num; }
+function movePrefix(fenBefore, m) { var n = numberForFen(fenBefore); return 'Jugada ' + n + ', ' + sideName(m.color) + ': '; }
+function fenBeforeLast() {
+  if (inVar()) {
+    if (G.varMoves.length) return G.varMoves.length > 1 ? G.varFens[G.varFens.length - 2] : G.fens[G.varBase];
+    return G.varBase > 0 ? G.fens[G.varBase - 1] : null;
+  }
+  return G.ply > 0 ? G.fens[G.ply - 1] : null;
+}
+function lastMoveText() {
+  var m = lastMove(); if (!m) return 'Todavía no se jugó ninguna jugada en esta posición.';
+  return movePrefix(fenBeforeLast(), m) + moveSentence(m) + '.';
+}
+
+function setGame(startFen, moves, headers, title) {
+  var c = new Chess(); c.load(startFen);
+  var fens = [c.fen()], vmoves = [];
+  for (var i = 0; i < moves.length; i++) { var m = c.move(moves[i], { sloppy: true }); if (!m) break; vmoves.push(m); fens.push(c.fen()); }
+  G.startFen = fens[0]; G.main = vmoves; G.fens = fens; G.ply = 0; G.varBase = null; G.varMoves = []; G.varFens = [];
+  G.headers = headers || {}; G.title = title || 'Partida'; G.puzzle = null; G.selected = null; G.origLen = vmoves.length;
+}
+
+// ---------- rendering ----------
+var GLYPH = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
+function render() {
+  var board = $('board'); board.innerHTML = '';
+  var chess = curChess(), map = boardMap(chess), lm = lastMove();
+  var ranks = G.persp === 'w' ? [8, 7, 6, 5, 4, 3, 2, 1] : [1, 2, 3, 4, 5, 6, 7, 8];
+  var files = G.persp === 'w' ? FILES.split('') : FILES.split('').reverse();
+  ranks.forEach(function (r) {
+    var lab = document.createElement('div'); lab.className = 'coord'; lab.textContent = r; lab.setAttribute('aria-hidden', 'true'); board.appendChild(lab);
+    files.forEach(function (f) {
+      var sq = f + r, p = map[sq];
+      var b = document.createElement('button');
+      b.className = 'sq ' + (sqShade(sq) === 'clara' ? 'l' : 'd');
+      if (lm && (lm.from === sq || lm.to === sq)) b.classList.add('hl');
+      if (G.selected === sq) b.classList.add('sel');
+      b.setAttribute('aria-label', sq + ', ' + (p ? pieceName(p) : 'vacía'));
+      b.dataset.sq = sq;
+      if (p) { var s = document.createElement('span'); s.className = 'pc ' + p.color; s.textContent = GLYPH[p.type] + '︎'; s.setAttribute('aria-hidden', 'true'); b.appendChild(s); }
+      board.appendChild(b);
+    });
+  });
+  board.appendChild(document.createElement('div'));
+  files.forEach(function (f) { var d = document.createElement('div'); d.className = 'coord'; d.textContent = f; d.setAttribute('aria-hidden', 'true'); board.appendChild(d); });
+
+  var meta = [];
+  var h = G.headers;
+  if (h.White || h.Black) meta.push('<strong>' + esc(h.White || '?') + (h.WhiteElo ? ' (' + esc(h.WhiteElo) + ')' : '') + '</strong> contra <strong>' + esc(h.Black || '?') + (h.BlackElo ? ' (' + esc(h.BlackElo) + ')' : '') + '</strong>');
+  if (inVar()) meta.push('Variante desde la jugada ' + G.varBase + ' de la partida (' + G.varMoves.length + ' jugadas propias). Escribí “volver” para salir.');
+  else if (G.main.length) meta.push('Medio movimiento ' + G.ply + ' de ' + G.main.length + '.');
+  if (lm) meta.push('Última: <span class="mono">' + esc(sanEs(lm.san)) + '</span>.');
+  meta.push(esc(statusText(chess)));
+  $('meta').innerHTML = meta.join(' ');
+  var mode = $('mode');
+  mode.textContent = G.live ? 'En vivo · ' + G.title : (G.puzzle ? 'Puzzle · ' + G.title : G.title);
+  mode.classList.toggle('live', !!G.live);
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+// ---------- navigation ----------
+function goPly(p, announce) {
+  if (inVar()) { G.varBase = null; G.varMoves = []; G.varFens = []; }
+  p = Math.max(0, Math.min(G.main.length, p));
+  G.ply = p; render();
+  if (announce === false) return;
+  var t = p === 0 ? 'Posición inicial de la partida. ' + statusText(curChess()) : lastMoveText() + afterMove();
+  say(t + extraAfterMove());
+}
+function afterMove() { var c = curChess(); if (c.in_checkmate()) return ' Ganan ' + sideName(c.turn() === 'w' ? 'b' : 'w') + '.'; return ' ' + statusText(c); }
+function extraAfterMove() {
+  if (!S.autoread) return '';
+  var h = hangingShort(boardMap(curChess()));
+  return h ? '\n' + h : '';
+}
+function next() {
+  if (inVar()) return say('Estás en una variante. Escribí “volver” para regresar a la partida.');
+  if (G.ply >= G.main.length) return say('Ya estás en la última jugada.');
+  G.ply++; render(); say(lastMoveText() + (curChess().game_over() ? afterMove() : '') + extraAfterMove());
+}
+function prev() {
+  if (inVar()) {
+    if (!G.varMoves.length) { G.varBase = null; render(); return say('Saliste de la variante. ' + lastMoveText()); }
+    G.varMoves.pop(); G.varFens.pop(); render();
+    return say('Jugada deshecha. ' + (lastMove() ? 'Ahora la última es: ' + lastMoveText() : 'Posición inicial.'));
+  }
+  if (G.ply <= 0) return say('Ya estás en el inicio.');
+  G.ply--; render();
+  say(G.ply === 0 ? 'Inicio de la partida. ' + statusText(curChess()) : 'Retrocediste. Última jugada: ' + lastMoveText());
+}
+function goMoveNumber(n, color) {
+  for (var i = 0; i < G.main.length; i++) {
+    if (numberForFen(G.fens[i]) === n && G.main[i].color === color) return goPly(i + 1);
+  }
+  say('No encuentro la jugada ' + n + ' de ' + sideName(color) + ' en esta partida.', { err: true });
+}
+
+function moveList(all) {
+  var from = all ? 0 : Math.max(0, G.ply - 10), to = all ? G.main.length : G.ply;
+  if (!G.main.length) return 'No hay jugadas cargadas.';
+  if (to === 0) return 'Estás en el inicio. Hay ' + G.main.length + ' medios movimientos en total. Escribí “lista completa” para oírlos todos.';
+  var parts = [];
+  for (var i = from; i < to; i++) {
+    var m = G.main[i], n = numberForFen(G.fens[i]);
+    if (m.color === 'w') parts.push(n + ', ' + moveWords(m));
+    else if (i === from) parts.push(n + ', negras ' + moveWords(m));
+    else parts[parts.length - 1] += '; ' + moveWords(m);
+  }
+  return (all ? 'Partida completa: ' : 'Últimas jugadas: ') + parts.join('. ') + '.';
+}
+
+// ---------- playing moves ----------
+function playTyped(raw) {
+  var chess = curChess();
+  var before = chess.fen();
+  var m = tryMove(chess, raw, S.notation);
+  if (!m) return false;
+  var uci = m.from + m.to + (m.promotion || '');
+  if (G.puzzle && !G.puzzle.done) return puzzleMove(m, uci, chess, before);
+  pushMove(m, chess.fen());
+  say(movePrefix(before, m) + moveSentence(m) + '.' + afterMove() + extraAfterMove());
+  return true;
+}
+function pushMove(m, fenAfter) {
+  if (!inVar()) {
+    // At the end of the game (or loaded position with no moves): extend the main line.
+    if (G.ply === G.main.length && !G.live) { G.main.push(m); G.fens.push(fenAfter); G.ply++; render(); return; }
+    G.varBase = G.ply; G.varMoves = []; G.varFens = [];
+  }
+  G.varMoves.push(m); G.varFens.push(fenAfter); render();
+}
+
+// ---------- puzzles ----------
+function puzzleMove(m, uci, chess, before) {
+  var P = G.puzzle, want = P.solution[P.i];
+  if (uci !== want && !(chess.in_checkmate())) {
+    return say('No es la jugada del puzzle. ' + moveSentence(m) + ' no funciona. Probá otra; escribí “pista” si querés ayuda.', { err: true }), true;
+  }
+  pushMove(m, chess.fen()); P.i++;
+  var t = 'Bien. ' + moveSentence(m) + '.';
+  if (P.i >= P.solution.length || chess.in_checkmate()) { P.done = true; render(); return say(t + ' ¡Puzzle resuelto!'), true; }
+  var reply = chess.move({ from: P.solution[P.i].slice(0, 2), to: P.solution[P.i].slice(2, 4), promotion: P.solution[P.i][4] });
+  var b2 = curFen();
+  pushMove(reply, chess.fen()); P.i++;
+  t += ' Responde ' + sideName(reply.color) + ': ' + moveSentence(reply) + '.';
+  if (P.i >= P.solution.length) { P.done = true; t += ' ¡Puzzle resuelto!'; }
+  else t += ' Te toca de nuevo.';
+  render(); say(t); return true;
+}
+function startPuzzle(data) {
+  var c = new Chess(); c.load_pgn(data.game.pgn, { sloppy: true });
+  var moves = c.history();
+  var sol = data.puzzle.solution;
+  setGame(START_FEN, moves, {}, 'Puzzle ' + data.puzzle.id);
+  // Find the ply where the first solution move is legal (normally the end of the PGN).
+  var cands = [G.main.length, data.puzzle.initialPly + 1, data.puzzle.initialPly];
+  var at = null;
+  for (var i = 0; i < cands.length; i++) {
+    var p = cands[i]; if (p < 0 || p > G.main.length) continue;
+    var t = new Chess(); t.load(G.fens[p]);
+    if (t.move({ from: sol[0].slice(0, 2), to: sol[0].slice(2, 4), promotion: sol[0][4] })) { at = p; break; }
+  }
+  if (at === null) return say('No pude armar la posición de ese puzzle.', { err: true });
+  G.main = G.main.slice(0, at); G.fens = G.fens.slice(0, at + 1); G.ply = at;
+  G.puzzle = { id: data.puzzle.id, solution: sol, i: 0, rating: data.puzzle.rating, done: false };
+  if (G.persp !== curChess().turn()) { G.persp = curChess().turn(); $('persp').value = G.persp; }
+  render();
+  say('Puzzle de Lichess, dificultad ' + data.puzzle.rating + '. Juegan ' + sideName(curChess().turn()) + ' y ganan. ' +
+      'La última jugada del rival fue: ' + (lastMove() ? moveSentence(lastMove()) : 'ninguna') + '. Escribí “b” y “n” para escuchar las piezas, y después tu jugada.');
+}
+
+// ---------- Lichess network ----------
+var LI = 'https://lichess.org';
+function netFail(e) {
+  say('No pude conectarme con Lichess desde acá. Si la página está abierta dentro de Claude, la conexión externa está bloqueada: en Lichess abrí la partida, “Compartir y exportar”, copiá el PGN y pegalo en el cuadro de carga. También podés abrir el archivo de esta página en el navegador, donde la conexión funciona.', { err: true });
+  console.warn(e);
+}
+function loadGameId(id, side, thenLive) {
+  say('Buscando la partida ' + id + ' en Lichess…');
+  return fetch(LI + '/game/export/' + id + '?clocks=false&evals=false', { headers: { Accept: 'application/x-chess-pgn' } })
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+    .then(function (pgn) {
+      loadPgn(pgn, side);
+      var ongoing = /\[Result "\*"\]/.test(pgn);
+      if (ongoing && thenLive !== false) startLive(id);
+    }).catch(netFail);
+}
+function loadUser(u) {
+  u = u.trim(); if (!u) return say('Escribí un nombre de usuario de Lichess.', { err: true });
+  say('Buscando la partida actual de ' + u + '…');
+  fetch(LI + '/api/user/' + encodeURIComponent(u) + '/current-game', { headers: { Accept: 'application/x-chess-pgn' } })
+    .then(function (r) { if (r.status === 404) throw new Error('nouser'); if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+    .then(function (pgn) {
+      var site = (pgn.match(/\[Site "https?:\/\/lichess\.org\/([A-Za-z0-9]{8})/) || [])[1];
+      var white = (pgn.match(/\[White "([^"]+)"/) || [])[1] || '';
+      loadPgn(pgn, white.toLowerCase() === u.toLowerCase() ? 'white' : 'black');
+      if (site && /\[Result "\*"\]/.test(pgn)) startLive(site);
+      else say('La última partida de ' + u + ' ya terminó. Quedó cargada para repasarla. ' + statusText(curChess()));
+    }).catch(function (e) { if (e.message === 'nouser') say('No encuentro ese usuario en Lichess.', { err: true }); else netFail(e); });
+}
+function loadPuzzle(id) {
+  say(id ? 'Buscando el puzzle…' : 'Buscando el puzzle del día…');
+  fetch(LI + (id ? '/api/puzzle/' + id : '/api/puzzle/daily'))
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(startPuzzle).catch(netFail);
+}
+function stopLive(silent) {
+  if (G.live) { try { G.live.abort.abort(); } catch (e) {} G.live = null; render(); if (!silent) say('Dejé de seguir la partida en vivo.'); }
+}
+function startLive(id) {
+  stopLive(true);
+  var ac = new AbortController();
+  G.live = { id: id, abort: ac };
+  G.ply = G.main.length; render();
+  say('Siguiendo en vivo. Te aviso cada jugada nueva. ' + lastMoveText() + ' ' + statusText(curChess()));
+  fetch(LI + '/api/stream/game/' + id, { signal: ac.signal }).then(function (r) {
+    if (!r.ok || !r.body) throw new Error('HTTP ' + r.status);
+    var reader = r.body.getReader(), dec = new TextDecoder(), buf = '';
+    function pump() {
+      return reader.read().then(function (res) {
+        if (res.done) { if (G.live && G.live.id === id) { G.live = null; render(); say('La transmisión terminó.'); } return; }
+        buf += dec.decode(res.value, { stream: true });
+        var lines = buf.split('\n'); buf = lines.pop();
+        lines.forEach(function (l) { if (l.trim()) { try { onLive(JSON.parse(l)); } catch (e) {} } });
+        return pump();
+      });
+    }
+    return pump();
+  }).catch(function (e) { if (e.name !== 'AbortError') { G.live = null; render(); netFail(e); } });
+}
+function onLive(msg) {
+  if (!G.live) return;
+  var fen = msg.fen; if (!fen) return;
+  var lastBoard = G.fens[G.fens.length - 1].split(' ')[0];
+  if (fen.split(' ')[0] === lastBoard) {
+    if (msg.status && msg.status.name && !/started|created/.test(msg.status.name)) finishLive(msg);
+    return;
+  }
+  var atEnd = !inVar() && G.ply === G.main.length;
+  var c = new Chess(); c.load(G.fens[G.fens.length - 1]);
+  var lm = msg.lm || msg.lastMove;
+  var m = lm ? c.move({ from: lm.slice(0, 2), to: lm.slice(2, 4), promotion: lm[4] || 'q' }) : null;
+  if (m && c.fen().split(' ')[0] === fen.split(' ')[0]) {
+    var before = G.fens[G.fens.length - 1];
+    G.main.push(m); G.fens.push(c.fen()); G.origLen = G.main.length;
+    if (atEnd) G.ply = G.main.length;
+    render();
+    say((atEnd ? '' : 'Nueva jugada en la partida en vivo. ') + movePrefix(before, m) + moveSentence(m) + '.' + (atEnd ? afterMove() : '') + (atEnd ? extraAfterMove() : ''));
+  } else {
+    // Out of sync: rebuild from the FEN the server sent.
+    setGame(completeFen(fen), [], G.headers, G.title); render();
+    say('Sincronicé la posición con Lichess. ' + statusText(curChess()));
+  }
+}
+function finishLive() { stopLive(true); say('La partida terminó. ' + statusText(curChess())); }
+
+// ---------- loading ----------
+function loadPgn(pgn, side) {
+  var c = new Chess();
+  if (!c.load_pgn(pgn.trim(), { sloppy: true })) return say('No pude leer ese PGN. Revisá que esté completo.', { err: true }), false;
+  var h = c.header(), moves = c.history();
+  var start = h.FEN ? completeFen(h.FEN) : START_FEN;
+  stopLive(true);
+  setGame(start, moves, h, (h.White && h.Black) ? h.White + ' – ' + h.Black : 'Partida');
+  if (side === 'black') { G.persp = 'b'; $('persp').value = 'b'; } else if (side === 'white') { G.persp = 'w'; $('persp').value = 'w'; }
+  render();
+  var who = (h.White || h.Black) ? 'Blancas: ' + (h.White || '?') + (h.WhiteElo ? ', ' + h.WhiteElo : '') + '. Negras: ' + (h.Black || '?') + (h.BlackElo ? ', ' + h.BlackElo : '') + '. ' : '';
+  var res = h.Result && h.Result !== '*' ? 'Resultado ' + h.Result.replace('1/2-1/2', 'tablas').replace('1-0', 'uno a cero, ganan blancas').replace('0-1', 'cero a uno, ganan negras') + '. ' : '';
+  say('Partida cargada. ' + who + res + G.main.length + ' medios movimientos. Estás en el inicio: “s” avanza, “fin” va al final.');
+  return true;
+}
+function loadFen(fen) {
+  var f = completeFen(fen), c = new Chess();
+  var v = c.validate_fen(f);
+  if (!v.valid) return say('Ese FEN no es válido: ' + v.error, { err: true });
+  stopLive(true);
+  setGame(f, [], {}, 'Posición');
+  render();
+  say('Posición cargada. ' + statusText(curChess()) + ' Escribí “b”, “n” o “t” para escucharla.');
+}
+function handleLoad(txt) {
+  var k = classifyInput(txt);
+  switch (k.kind) {
+    case 'empty': return say('Pegá primero un link de Lichess, un FEN o un PGN.', { err: true });
+    case 'fen': return loadFen(k.fen);
+    case 'pgn': return loadPgn(k.pgn);
+    case 'game': return loadGameId(k.id, k.side);
+    case 'puzzle': return loadPuzzle(k.id);
+    default: return say('No reconozco ese link de Lichess. Usá el de una partida, del análisis o de un puzzle.', { err: true });
+  }
+}
+
+// ---------- commands ----------
+var HELP = [
+  ['b · blancas', 'Lista las piezas blancas, agrupadas por tipo.'],
+  ['n · negras', 'Lista las piezas negras.'],
+  ['t · tablero', 'Lee el tablero entero, fila por fila, juntando las casillas vacías.'],
+  ['fila 4', 'Lee una fila.'],
+  ['col e · columna e', 'Lee una columna.'],
+  ['e4?  ·  c e4', 'Qué hay en una casilla y de qué color es.'],
+  ['ve f3', 'Qué controla, ataca y defiende la pieza de f3, sus jugadas legales y quién la ataca.'],
+  ['at e5', 'Qué piezas de cada bando controlan una casilla.'],
+  ['amenazas', 'Piezas atacadas de cada bando, si están defendidas o no.'],
+  ['material', 'Piezas que quedan y diferencia en puntos.'],
+  ['estado', 'A quién le toca, jaque, enroques posibles.'],
+  ['j · jugadas', 'Todas las jugadas legales del bando que mueve.'],
+  ['u · última', 'Repite la última jugada.'],
+  ['s · a', 'Siguiente o anterior jugada de la partida (también flechas derecha e izquierda).'],
+  ['inicio · fin', 'Ir al comienzo o al final de la partida.'],
+  ['ir 15 · ir 15n', 'Ir a la jugada 15 de blancas o de negras.'],
+  ['lista · lista completa', 'Lee las últimas 10 jugadas o la partida entera.'],
+  ['Cf3 · e4 · e2e4 · O-O', 'Jugar una jugada. Si estás en medio de una partida, abre una variante.'],
+  ['z · deshacer', 'Deshace la última jugada propia.'],
+  ['volver', 'Sale de la variante y vuelve a la partida.'],
+  ['pista · solución', 'En un puzzle: qué pieza mueve, o la jugada correcta.'],
+  ['girar', 'Cambia el lado desde el que se lee el tablero.'],
+  ['vivo · parar', 'Seguir en vivo la partida de Lichess cargada, o dejar de seguirla.'],
+  ['fen', 'Muestra el FEN de la posición actual.'],
+  ['nueva', 'Vuelve a la posición inicial.'],
+  ['r · repetir', 'Repite lo último que se dijo (Escape calla).'],
+  ['más lento · más rápido', 'Cambia la velocidad de la voz.']
+];
+function helpText() {
+  return 'Comandos principales. Piezas: “b” blancas, “n” negras, “t” tablero entero, “fila 4”, “columna e”. ' +
+    'Casillas: “e4” con signo de pregunta para saber qué hay, “ve f3” para ver una pieza, “at e5” para saber quién controla una casilla. ' +
+    'Análisis: “amenazas”, “material”, “estado”, “jugadas”. ' +
+    'Partida: “s” siguiente, “a” anterior, “inicio”, “fin”, “ir 15”, “lista”, “u” última jugada. ' +
+    'Para jugar escribí la jugada, por ejemplo C f 3 o e 2 e 4. “z” deshace, “volver” sale de la variante. ' +
+    '“r” repite, Escape calla, “más lento” y “más rápido” cambian la voz.';
+}
+function norm(s) { return s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[¿¡]/g, '').replace(/\s+/g, ' '); }
+
+function run(raw) {
+  var q = raw.trim(); if (!q) return;
+  var c = norm(q), chess = curChess(), map = boardMap(chess), m;
+  var echo = { q: q };
+  function out(t) { say(t, echo); }
+
+  if (/^(ayuda|help|h|\?)$/.test(c)) return out(helpText());
+  if (/^(b|blancas|piezas blancas)$/.test(c)) return out(listPieces(map, 'w'));
+  if (/^(n|negras|piezas negras)$/.test(c)) return out(listPieces(map, 'b'));
+  if (/^(p|piezas)$/.test(c)) return out(listPieces(map, 'w') + '\n' + listPieces(map, 'b'));
+  if (/^(t|tablero)$/.test(c)) return out(boardText(map, G.persp));
+  if ((m = c.match(/^(?:fila|f) ?([1-8])$/)) && !/^f[1-8]$/.test(c)) return out(rankText(map, +m[1], G.persp));
+  if ((m = c.match(/^(?:col|columna) ?([a-h])$/))) return out(fileText(map, m[1], G.persp));
+  if ((m = c.match(/^(?:\? ?|c |casilla |que hay en |que hay )([a-h][1-8])\??$/)) || (m = c.match(/^([a-h][1-8]) ?\?$/))) return out(squareText(map, m[1]));
+  if ((m = c.match(/^(?:ve|v|pieza|mira) ([a-h][1-8])$/))) return out(pieceSightText(chess, map, m[1]));
+  if ((m = c.match(/^(?:at|atacan|ataques|quien ataca|controlan) ([a-h][1-8])$/))) return out(attackText(map, m[1]));
+  if (/^(amenazas|am|atacadas|colgadas)$/.test(c)) return out(threatsText(map));
+  if (/^(m|material)$/.test(c)) return out(materialText(map));
+  if (/^(estado|turno|st|quien juega)$/.test(c)) return out(statusText(chess) + ' ' + castleText(chess.fen()) + (lastMove() ? ' ' + lastMoveText() : ''));
+  if (/^(j|jugadas|legales|jugadas legales)$/.test(c)) {
+    var mv = chess.moves({ verbose: true });
+    if (!mv.length) return out('No hay jugadas legales. ' + statusText(chess));
+    var groups = {}; mv.forEach(function (x) { (groups[x.piece] = groups[x.piece] || []).push(x); });
+    var parts = ORDER.filter(function (t) { return groups[t]; }).map(function (t) {
+      var byFrom = {}; groups[t].forEach(function (x) { (byFrom[x.from] = byFrom[x.from] || []).push(x); });
+      return Object.keys(byFrom).sort(bySquare).map(function (f) {
+        var list = byFrom[f];
+        if (list[0].flags.indexOf('k') >= 0 || list[0].flags.indexOf('q') >= 0) {}
+        return NAMES[t][0] + ' de ' + f + ': ' + joinY(list.map(function (x) { return (x.flags.indexOf('k') >= 0) ? 'enroque corto' : (x.flags.indexOf('q') >= 0 ? 'enroque largo' : x.to + (x.captured ? ' captura' : '') + (/#$/.test(x.san) ? ' mate' : /\+$/.test(x.san) ? ' jaque' : '')); }));
+      }).join('. ');
+    });
+    return out(mv.length + ' jugadas legales para ' + sideName(chess.turn()) + '. ' + parts.join('. ') + '.');
+  }
+  if (/^(u|ultima|ultima jugada)$/.test(c)) return out(lastMoveText());
+  if (/^(s|sig|siguiente|>)$/.test(c)) return next();
+  if (/^(a|ant|anterior|<)$/.test(c)) return prev();
+  if (/^(i|inicio|principio)$/.test(c)) { if (!G.main.length && !inVar()) return out('No hay jugadas cargadas; ya estás en la posición.'); return goPly(0); }
+  if (/^(fin|final)$/.test(c)) return goPly(G.main.length);
+  if ((m = c.match(/^ir (?:a )?(\d+) ?(n|negras|b|blancas)?$/))) return goMoveNumber(+m[1], m[2] && m[2][0] === 'n' ? 'b' : 'w');
+  if (/^(lista|jugadas partida)$/.test(c)) return out(moveList(false));
+  if (/^lista (completa|toda|entera)$/.test(c)) return out(moveList(true));
+  if (/^(z|deshacer|atras)$/.test(c)) {
+    if (inVar() && G.varMoves.length) return prev();
+    if (!inVar() && G.ply === G.main.length && G.main.length > (G.origLen || 0) && !G.live) { G.main.pop(); G.fens.pop(); G.ply--; render(); return out('Jugada deshecha. ' + statusText(curChess())); }
+    return out('No hay jugadas tuyas para deshacer. Para recorrer la partida usá “a”.');
+  }
+  if (/^(volver|salir)$/.test(c)) { if (!inVar()) return out('No estás en una variante.'); var b = G.varBase; G.varBase = null; G.varMoves = []; G.varFens = []; G.ply = b; render(); return out('Volviste a la partida. ' + lastMoveText()); }
+  if (/^(girar|lado|voltear)$/.test(c)) { G.persp = G.persp === 'w' ? 'b' : 'w'; $('persp').value = G.persp; render(); return out('Ahora leo el tablero desde ' + sideName(G.persp) + '.'); }
+  if (/^fen$/.test(c)) return out('FEN: ' + chess.fen());
+  if (/^(nueva|reiniciar|posicion inicial)$/.test(c)) { stopLive(true); setGame(START_FEN, [], {}, 'Posición inicial'); render(); return out('Posición inicial. Juegan blancas.'); }
+  if (/^(r|repetir|otra vez)$/.test(c)) { if (lastSpoken) { speak(lastSpoken); $('out').textContent = lastSpoken; } return; }
+  if (/^(callar|silencio|basta)$/.test(c)) return hush();
+  if (/^mas lento$/.test(c)) { setRate(S.rate - 0.15); return out('Velocidad ' + S.rate.toFixed(1) + '.'); }
+  if (/^mas rapido$/.test(c)) { setRate(S.rate + 0.15); return out('Velocidad ' + S.rate.toFixed(1) + '.'); }
+  if (/^(vivo|seguir|en vivo)$/.test(c)) {
+    var site = (G.headers.Site || '').match(/lichess\.org\/([A-Za-z0-9]{8})/);
+    if (!site) return out('Primero cargá una partida de Lichess, o escribí el usuario en “Seguir la partida en curso”.');
+    return startLive(site[1]);
+  }
+  if (/^(parar|stop|detener)$/.test(c)) return G.live ? stopLive() : out('No estoy siguiendo ninguna partida en vivo.');
+  if (/^(puzzle|diario|puzzle diario)$/.test(c)) return loadPuzzle();
+  if (/^pista$/.test(c)) {
+    if (!G.puzzle || G.puzzle.done) return out('No hay un puzzle activo.');
+    var sq = G.puzzle.solution[G.puzzle.i].slice(0, 2);
+    return out('Pista: mové ' + NAMES[map[sq].type][0] + ' ' + adjFor(map[sq]) + ' de ' + sq + '.');
+  }
+  if (/^(solucion|respuesta)$/.test(c)) {
+    if (!G.puzzle || G.puzzle.done) return out('No hay un puzzle activo.');
+    var u = G.puzzle.solution[G.puzzle.i], t = curChess(), mm = t.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] });
+    return out('La jugada es: ' + moveSentence(mm) + '.');
+  }
+  if (/^[a-h][1-8]$/.test(c) && !chess.moves({ verbose: true }).some(function (x) { return x.to === c && x.piece === 'p'; })) {
+    // A bare square that isn't a legal pawn move: treat it as a question.
+    return out(squareText(map, c));
+  }
+  // Last: a move.
+  if (playTyped(q)) return;
+  out('No entendí “' + q + '”. Si era una jugada, no es legal en esta posición. Escribí “ayuda” para ver los comandos.');
+  $('out').classList.add('err');
+}
+function adjFor(p) { return adj(p.color, NAMES[p.type][2], false); }
+function setRate(r) { S.rate = Math.max(0.6, Math.min(2, Math.round(r * 100) / 100)); $('rate').value = S.rate; $('ratev').textContent = S.rate.toFixed(1); store('rate', S.rate); }
+
+// ---------- wiring ----------
+function boot() {
+  S.tts = recall('tts', true); S.rate = recall('rate', 1); S.voiceName = recall('voice', ''); S.notation = recall('notation', 'es'); S.autoread = recall('autoread', false);
+  G.persp = recall('persp', 'w');
+  $('ttson').checked = S.tts; $('notation').value = S.notation; $('persp').value = G.persp; $('autoread').checked = S.autoread; setRate(S.rate);
+  if (window.speechSynthesis) { pickVoices(); speechSynthesis.onvoiceschanged = pickVoices; }
+  else { $('ttson').checked = false; $('ttson').disabled = true; S.tts = false; voiceStatus('Este navegador no tiene síntesis de voz.'); }
+
+  var tb = $('helptable');
+  HELP.forEach(function (h) { var tr = document.createElement('tr'); tr.innerHTML = '<td><code>' + esc(h[0]) + '</code></td><td>' + esc(h[1]) + '</td>'; tb.appendChild(tr); });
+
+  // Example game so the page opens in a working state (Morphy's Opera Game, 1858).
+  loadPgn('[Event "Ópera de París (partida de ejemplo)"]\n[White "Morphy"]\n[Black "Duque de Brunswick y Conde Isouard"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 d6 3. d4 Bg4 4. dxe5 Bxf3 5. Qxf3 dxe5 6. Bc4 Nf6 7. Qb3 Qe7 8. Nc3 c6 9. Bg5 b5 10. Nxb5 cxb5 11. Bxb5+ Nbd7 12. O-O-O Rd8 13. Rxd7 Rxd7 14. Rd1 Qe6 15. Bxd7+ Nxd7 16. Qb8+ Nxb8 17. Rd8# 1-0');
+  hush();
+  $('out').textContent = 'Cargué de ejemplo la Partida de la Ópera, Morphy 1858. Escribí “s” para avanzar, “b” o “n” para oír las piezas, o “ayuda”. Para usar otra partida, pegala en “Cargar partida o posición”.';
+  lastSpoken = $('out').textContent;
+
+  var cmd = $('cmd');
+  cmd.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { var v = cmd.value; if (v.trim()) { cmdHist.push(v); histIdx = cmdHist.length; } cmd.value = ''; run(v); e.preventDefault(); }
+    else if (e.key === 'Escape') { hush(); }
+    else if (e.key === 'ArrowUp' && (cmd.value === '' || histIdx < cmdHist.length)) { if (histIdx > 0) { histIdx--; cmd.value = cmdHist[histIdx]; } e.preventDefault(); }
+    else if (e.key === 'ArrowDown' && histIdx < cmdHist.length) { histIdx++; cmd.value = histIdx < cmdHist.length ? cmdHist[histIdx] : ''; e.preventDefault(); }
+    else if (cmd.value === '' && e.key === 'ArrowRight') { next(); e.preventDefault(); }
+    else if (cmd.value === '' && e.key === 'ArrowLeft') { prev(); e.preventDefault(); }
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hush(); }, true);
+  function testVoice() { if (!window.speechSynthesis) return voiceStatus('Este navegador no tiene síntesis de voz. Probá con Chrome, Edge o Safari actualizados.'); if (!S.tts) { S.tts = true; $('ttson').checked = true; store('tts', true); } voiceStatus('Intentando hablar…'); speak('Hola. Si escuchás esto, la voz funciona.'); setTimeout(function () { if (/Intentando/.test($('vstat').textContent)) voiceStatus('No arrancó la voz. Voces que ofrece el navegador: ' + speechSynthesis.getVoices().length + ' (en español: ' + voices.length + '). Dentro de la app de Claude: ' + (window.self !== window.top ? 'sí' : 'no') + '.'); }, 2500); }
+  $('testvoice').addEventListener('click', testVoice);
+  $('testvoice2').addEventListener('click', testVoice);
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-cmd]'); if (b) { run(b.dataset.cmd); return; }
+    var s = e.target.closest('.sq');
+    if (s) {
+      var sq = s.dataset.sq, chess = curChess(), map = boardMap(chess);
+      // Click-to-move for the teacher: select a piece of the side to move, then a target.
+      if (G.selected && G.selected !== sq) {
+        var from = G.selected; G.selected = null;
+        var before = chess.fen(), mv = chess.move({ from: from, to: sq, promotion: 'q' });
+        if (mv) {
+          if (G.puzzle && !G.puzzle.done) { puzzleMove(mv, mv.from + mv.to + (mv.promotion || ''), chess, before); return; }
+          pushMove(mv, chess.fen()); say(movePrefix(before, mv) + moveSentence(mv) + '.' + afterMove() + extraAfterMove()); return;
+        }
+      }
+      G.selected = (map[sq] && map[sq].color === chess.turn() && G.selected !== sq) ? sq : null;
+      render();
+      say(map[sq] ? pieceSightText(chess, map, sq) : squareText(map, sq));
+      var again = document.querySelector('.sq[data-sq="' + sq + '"]'); if (again) again.focus();
+    }
+  });
+  $('loadbtn').addEventListener('click', function () { handleLoad($('loadbox').value); });
+  $('startbtn').addEventListener('click', function () { run('nueva'); });
+  $('dailybtn').addEventListener('click', function () { loadPuzzle(); });
+  $('userbtn').addEventListener('click', function () { loadUser($('userbox').value); });
+  $('userbox').addEventListener('keydown', function (e) { if (e.key === 'Enter') loadUser($('userbox').value); });
+  $('ttson').addEventListener('change', function (e) { S.tts = e.target.checked; store('tts', S.tts); if (!S.tts) hush(); });
+  $('voicesel').addEventListener('change', function (e) { S.voiceName = e.target.value; store('voice', S.voiceName); speak('Así suena esta voz.'); });
+  $('rate').addEventListener('input', function (e) { setRate(+e.target.value); });
+  $('notation').addEventListener('change', function (e) { S.notation = e.target.value; store('notation', S.notation); });
+  $('persp').addEventListener('change', function (e) { G.persp = e.target.value; store('persp', G.persp); render(); });
+  $('autoread').addEventListener('change', function (e) { S.autoread = e.target.checked; store('autoread', S.autoread); });
+  cmd.focus();
+}
+if (window.Chess) boot(); else window.addEventListener('chessready', boot, { once: true });
+</script>
