@@ -1,0 +1,614 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tablero en Voz · Profesor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Atkinson+Hyperlegible+Mono:wght@400;600&display=swap">
+<style>
+:root {
+  --bg: #eceff0; --surface: #ffffff; --ink: #15201d; --muted: #55625d; --line: #cfd6d3;
+  --accent: #1d5bb8; --accent-ink: #ffffff; --sq-light: #e3e7d8; --sq-dark: #7f9874;
+  --hl: rgba(242, 196, 64, .55); --sel: rgba(29, 91, 184, .12); --ok: #1d7a46; --warn: #a4471b; --rec: #c62828;
+  --font-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Atkinson Hyperlegible Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101513; --surface: #19201d; --ink: #e6ece9; --muted: #9aa8a2; --line: #2d3733;
+    --accent: #84b2ff; --accent-ink: #0d1626; --sq-light: #bcc6ae; --sq-dark: #5f7655;
+    --hl: rgba(242, 196, 64, .5); --sel: rgba(132, 178, 255, .16); --ok: #5fcf8e; --warn: #ff9a6b; --rec: #ff6b6b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101513; --surface: #19201d; --ink: #e6ece9; --muted: #9aa8a2; --line: #2d3733;
+  --accent: #84b2ff; --accent-ink: #0d1626; --sq-light: #bcc6ae; --sq-dark: #5f7655;
+  --hl: rgba(242, 196, 64, .5); --sel: rgba(132, 178, 255, .16); --ok: #5fcf8e; --warn: #ff9a6b; --rec: #ff6b6b;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 17px; line-height: 1.5; margin: 0; padding: 20px 16px 48px; }
+.wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 20px; }
+h1 { font-size: 1.8rem; margin: 0; }
+h1 small { font-size: 1rem; color: var(--muted); font-weight: 400; }
+h2 { font-size: 1rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; }
+h3 { margin: 0 0 6px; font-size: 1.15rem; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; min-width: 0; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.muted, .hint { color: var(--muted); }
+.hint { font-size: .92rem; margin: 4px 0 0; }
+.ok { color: var(--ok); } .err { color: var(--warn); }
+label { font-weight: 700; display: block; margin-bottom: 4px; }
+input[type=text], input[type=email], input[type=password], textarea, select {
+  font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; width: 100%; }
+textarea { min-height: 90px; resize: vertical; }
+input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+.check { display: flex; gap: 8px; align-items: center; font-weight: 400; margin: 0; }
+.check input { width: 20px; height: 20px; accent-color: var(--accent); }
+button.btn { font: 600 .98rem var(--font-body); padding: 8px 13px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+button.btn:hover { border-color: var(--accent); }
+button.btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+button.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.btn.danger { color: var(--warn); }
+button.btn.rec { background: var(--rec); color: #fff; border-color: var(--rec); }
+button.btn:disabled { opacity: .5; cursor: default; }
+.tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line); }
+.tabs button { font: 700 1rem var(--font-body); background: none; border: 0; border-bottom: 3px solid transparent; padding: 8px 14px; color: var(--muted); cursor: pointer; }
+.tabs button[aria-selected=true] { color: var(--ink); border-bottom-color: var(--accent); }
+.tabs button:focus-visible { outline: 3px solid var(--accent); }
+.demo { background: var(--hl); color: var(--ink); border-radius: 8px; padding: 8px 12px; font-size: .95rem; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 14px; }
+.card { border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 8px; background: var(--surface); }
+.pill { display: inline-block; font-size: .8rem; font-weight: 700; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+.pill.ok { color: var(--ok); border-color: var(--ok); }
+.prog { font-size: .95rem; border-top: 1px dashed var(--line); padding-top: 8px; }
+.prog ul { margin: 4px 0 0; padding-left: 18px; }
+#status { min-height: 1.5em; }
+
+/* editor */
+.editor { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 18px; align-items: start; }
+.chap > button:not(:first-child) { padding: 8px 9px; }
+@media (max-width: 900px) { .editor { grid-template-columns: minmax(0, 1fr); } }
+.chaps { display: flex; flex-direction: column; gap: 6px; }
+.chap { display: flex; align-items: center; gap: 4px; }
+.chap > button:first-child { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chap.cur > button:first-child { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.chapbody { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 760px) { .chapbody { grid-template-columns: minmax(0, 1fr); } }
+.board { display: grid; grid-template-columns: repeat(8, 1fr); aspect-ratio: 1 / 1; width: 100%; border: 1px solid var(--line); }
+.board div { display: grid; place-items: center; font-size: clamp(20px, 8vw, 36px); line-height: 1; position: relative; font-family: "Segoe UI Symbol", "DejaVu Sans", "Noto Sans Symbols 2", serif; }
+.board .l { background: var(--sq-light); } .board .d { background: var(--sq-dark); }
+.board .hl::after { content: ""; position: absolute; inset: 0; background: var(--hl); }
+.board span { position: relative; z-index: 1; }
+.pc-w { color: #fff; -webkit-text-stroke: 1.3px #1a1a1a; paint-order: stroke fill; } .pc-b { color: #161616; }
+.moves { display: flex; flex-wrap: wrap; gap: 4px; max-height: 260px; overflow-y: auto; padding: 2px; }
+.mv { font: 600 .95rem var(--font-mono); padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+.mv.cur { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.mv .ic { font-family: var(--font-body); font-size: .8rem; margin-left: 3px; }
+.note { border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; background: var(--sel); }
+.rec-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--rec); animation: blink 1s infinite; }
+@keyframes blink { 50% { opacity: .2; } }
+@media (prefers-reduced-motion: reduce) { .rec-dot { animation: none; } }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Tablero en Voz <small>· panel del profesor</small></h1>
+    <div class="row" id="who" hidden><span id="whoname" class="muted"></span><button class="btn" id="logout">Salir</button></div>
+  </header>
+  <p class="demo" id="demobar" hidden>Modo demo: todo se guarda solo en este navegador. Sirve para probar; para usarlo con un alumno en otra computadora, entrá sin <code>?demo</code> en la dirección.</p>
+  <p id="status" role="status" aria-live="polite"></p>
+
+  <!-- ingreso -->
+  <section class="panel" id="vlogin" hidden>
+    <div class="stack" style="max-width: 420px">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tabin" aria-selected="true">Entrar</button>
+        <button role="tab" id="tabup" aria-selected="false">Crear cuenta</button>
+      </div>
+      <form id="flogin" class="stack">
+        <div id="fnombre" hidden><label for="lnombre">Tu nombre (lo escucha el alumno)</label><input type="text" id="lnombre" autocomplete="name"></div>
+        <div><label for="lemail">Email</label><input type="email" id="lemail" autocomplete="email" required></div>
+        <div><label for="lpass">Contraseña</label><input type="password" id="lpass" autocomplete="current-password" minlength="6" required></div>
+        <div class="row"><button class="btn primary" id="lgo">Entrar</button></div>
+      </form>
+    </div>
+  </section>
+
+  <!-- panel -->
+  <section id="vapp" hidden class="stack">
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tabalu" aria-selected="true">Alumnos</button>
+      <button role="tab" id="tabcla" aria-selected="false">Clases</button>
+    </div>
+
+    <div id="valumnos" class="stack">
+      <form id="fnuevo" class="panel row">
+        <div style="flex: 1 1 240px"><label for="nalumno">Nuevo alumno</label><input type="text" id="nalumno" placeholder="Nombre" maxlength="80" required></div>
+        <button class="btn primary" style="align-self: flex-end">Agregar</button>
+      </form>
+      <p class="hint">Cada alumno tiene un link de invitación. Mandáselo (por WhatsApp, por ejemplo): al abrirlo queda conectado en esa computadora, sin usuario ni contraseña, y ve las clases que le asignes. Si abrís el link en tu propia computadora, esa computadora queda conectada como el alumno.</p>
+      <div class="cards" id="lalumnos"></div>
+    </div>
+
+    <div id="vclases" class="stack" hidden>
+      <div class="row"><button class="btn primary" id="nclase">Nueva clase</button></div>
+      <div class="cards" id="lclases"></div>
+    </div>
+
+    <!-- editor de clase -->
+    <div id="veditor" class="stack" hidden>
+      <div class="row">
+        <button class="btn" id="volver">← Volver a las clases</button>
+        <span id="guardado" class="muted" role="status"></span>
+      </div>
+      <div class="panel"><label for="ctitulo">Título de la clase</label><input type="text" id="ctitulo" maxlength="200"></div>
+      <div class="editor">
+        <div class="panel stack">
+          <h2>Capítulos</h2>
+          <div class="chaps" id="lchaps"></div>
+          <div>
+            <label for="imp">Agregar capítulos</label>
+            <textarea id="imp" placeholder="Pegá un link de Lichess (partida, estudio o capítulo de estudio), un PGN o un FEN"></textarea>
+            <p class="hint">Un estudio de Lichess trae todos sus capítulos con los comentarios. En las lecciones interactivas, las jugadas del lado del alumno quedan como preguntas.</p>
+            <div class="row" style="margin-top: 8px"><button class="btn primary" id="impgo">Agregar</button><button class="btn" id="impstart">Posición inicial</button></div>
+          </div>
+        </div>
+        <div class="panel stack" id="pchap">
+          <p class="muted" id="nochap">Agregá un capítulo para empezar.</p>
+          <div id="chapedit" class="stack" hidden>
+            <div class="row">
+              <div style="flex: 2 1 240px"><label for="chtitulo">Título del capítulo</label><input type="text" id="chtitulo" maxlength="200"></div>
+              <div style="flex: 1 1 140px"><label for="chlado">El alumno juega con</label><select id="chlado"><option value="w">Blancas</option><option value="b">Negras</option></select></div>
+            </div>
+            <div class="row">
+              <span class="muted">Preguntas:</span>
+              <button class="btn" id="qlado">Todas las jugadas del alumno</button>
+              <button class="btn" id="qnone">Ninguna</button>
+              <span class="hint" style="margin: 0">o marcá jugada por jugada abajo.</span>
+            </div>
+            <div class="chapbody">
+              <div class="stack">
+                <div class="board" id="tb" aria-hidden="true"></div>
+                <div class="row">
+                  <button class="btn" id="pfirst" aria-label="Inicio">⏮</button>
+                  <button class="btn" id="pprev" aria-label="Anterior">◀</button>
+                  <button class="btn" id="pnext" aria-label="Siguiente">▶</button>
+                  <button class="btn" id="plast" aria-label="Final">⏭</button>
+                </div>
+              </div>
+              <div class="stack">
+                <div class="moves" id="lmoves" aria-label="Jugadas"></div>
+                <div class="note" id="note">
+                  <strong id="notelabel"></strong>
+                  <label class="check" id="qwrap"><input type="checkbox" id="nq"> Preguntarle esta jugada al alumno</label>
+                  <div><label for="nt">Comentario (se lee en voz alta)</label><textarea id="nt"></textarea></div>
+                  <div class="row" id="audiorow">
+                    <button class="btn" id="arec">🎤 Grabar audio</button>
+                    <button class="btn" id="aplay" hidden>▶ Escuchar</button>
+                    <button class="btn danger" id="adel" hidden>Borrar audio</button>
+                    <span id="astat" class="muted" role="status"></span>
+                  </div>
+                </div>
+                <form id="fadd" class="row">
+                  <div style="flex: 1 1 160px"><label for="addmv">Agregar jugada al final</label><input type="text" id="addmv" placeholder="Ej.: Cf3, e4, O-O" autocomplete="off"></div>
+                  <button class="btn" style="align-self: flex-end">Agregar</button>
+                  <button class="btn danger" type="button" id="cut" style="align-self: flex-end">Borrar jugadas desde acá</button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script src="js/pgn.js"></script>
+<script src="js/datos.js"></script>
+<script>
+var $ = function (id) { return document.getElementById(id); };
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+function status(t, err) { var s = $('status'); s.textContent = t || ''; s.className = err ? 'err' : ''; }
+function falla(e) { status(e && e.message ? e.message : String(e), true); }
+function show(id, on) { $(id).hidden = !on; }
+
+var ESTADO = { perfil: null, alumnos: [], clases: [], asign: [], progresos: [], clase: null, ci: 0, ply: 0 };
+
+// ---------- ingreso ----------
+var registrando = false;
+function modoLogin(up) {
+  registrando = up;
+  $('tabin').setAttribute('aria-selected', !up); $('tabup').setAttribute('aria-selected', up);
+  show('fnombre', up); $('lgo').textContent = up ? 'Crear cuenta' : 'Entrar';
+  $('lpass').setAttribute('autocomplete', up ? 'new-password' : 'current-password');
+}
+$('tabin').onclick = function () { modoLogin(false); };
+$('tabup').onclick = function () { modoLogin(true); };
+$('flogin').onsubmit = function (e) {
+  e.preventDefault();
+  var email = $('lemail').value.trim(), pass = $('lpass').value;
+  status(registrando ? 'Creando la cuenta…' : 'Entrando…');
+  (registrando ? Datos.registrar(email, pass, $('lnombre').value.trim()) : Datos.entrar(email, pass).then(function () { return {}; }))
+    .then(function (r) {
+      if (r.necesitaConfirmar) { status('Listo. Te mandamos un mail para confirmar la cuenta: abrí el link del mail y después entrá acá.'); modoLogin(false); return; }
+      return arrancar();
+    }).catch(falla);
+};
+$('logout').onclick = function () { Datos.salir().then(function () { location.reload(); }); };
+
+function arrancar() {
+  return Datos.perfil().then(function (p) {
+    ESTADO.perfil = p;
+    show('vlogin', !p); show('vapp', !!p); show('who', !!p);
+    if (!p) return;
+    $('whoname').textContent = p.nombre;
+    status('');
+    return recargar();
+  });
+}
+function recargar() {
+  return Promise.all([Datos.alumnos(), Datos.clases(), Datos.asignaciones(), Datos.progresos()]).then(function (r) {
+    ESTADO.alumnos = r[0]; ESTADO.clases = r[1]; ESTADO.asign = r[2]; ESTADO.progresos = r[3];
+    pintarAlumnos(); pintarClases();
+  }).catch(falla);
+}
+
+// ---------- pestañas ----------
+function pestaña(cual) {
+  $('tabalu').setAttribute('aria-selected', cual === 'alu'); $('tabcla').setAttribute('aria-selected', cual !== 'alu');
+  show('valumnos', cual === 'alu'); show('vclases', cual === 'cla'); show('veditor', cual === 'edit');
+}
+$('tabalu').onclick = function () { if (salirEditor()) { pestaña('alu'); recargar(); } };
+$('tabcla').onclick = function () { if (salirEditor()) { pestaña('cla'); recargar(); } };
+
+// ---------- alumnos ----------
+$('fnuevo').onsubmit = function (e) {
+  e.preventDefault();
+  var n = $('nalumno').value.trim(); if (!n) return;
+  Datos.crearAlumno(n).then(function () { $('nalumno').value = ''; status('Alumno agregado. Ahora mandale su link de invitación.'); return recargar(); }).catch(falla);
+};
+function asignadas(alumnoId) { return ESTADO.asign.filter(function (s) { return s.alumno_id === alumnoId; }).map(function (s) { return s.clase_id; }); }
+function resumenProgreso(alumnoId) {
+  var ids = asignadas(alumnoId);
+  if (!ids.length) return '<p class="muted">Todavía no tiene clases asignadas (se asignan en la pestaña Clases).</p>';
+  var items = ids.map(function (cid) {
+    var c = ESTADO.clases.find(function (x) { return x.id === cid; }); if (!c) return '';
+    var p = (ESTADO.progresos.find(function (x) { return x.alumno_id === alumnoId && x.clase_id === cid; }) || {}).datos;
+    if (!p || !p.caps) return '<li><strong>' + esc(c.titulo) + '</strong>: todavía no la abrió.</li>';
+    var caps = c.capitulos.map(function (cap) {
+      var pc = p.caps[cap.id]; if (!pc) return esc(cap.titulo) + ': sin abrir';
+      var preg = Object.keys(cap.notas || {}).filter(function (k) { return cap.notas[k].p; });
+      var r = { bien: 0, intentos: 0, pista: 0, rev: 0, falta: 0 };
+      preg.forEach(function (k) {
+        var q = (pc.preg || {})[k];
+        if (!q || (!q.ok && !q.rev)) r.falta++; else if (q.rev) r.rev++; else if (q.h) r.pista++; else if (q.i) r.intentos++; else r.bien++;
+      });
+      var t = esc(cap.titulo) + ': llegó a la jugada ' + (pc.max || 0) + ' de ' + cap.jugadas.length;
+      var partes = [[r.bien, 'bien a la primera'], [r.intentos, 'con más intentos'], [r.pista, 'con pista'], [r.rev, 'vio la respuesta'], [r.falta, 'sin responder']]
+        .filter(function (x) { return x[0]; }).map(function (x) { return x[0] + ' ' + x[1]; });
+      if (preg.length) t += ' · ' + preg.length + (preg.length === 1 ? ' pregunta: ' : ' preguntas: ') + partes.join(', ');
+      return t;
+    });
+    var cuando = p.fecha ? ' <span class="muted">(última vez: ' + new Date(p.fecha).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) + ')</span>' : '';
+    return '<li><strong>' + esc(c.titulo) + '</strong>' + cuando + '<ul><li>' + caps.join('</li><li>') + '</li></ul></li>';
+  });
+  return '<ul>' + items.join('') + '</ul>';
+}
+function pintarAlumnos() {
+  var box = $('lalumnos');
+  if (!ESTADO.alumnos.length) { box.innerHTML = '<p class="muted">Todavía no agregaste alumnos.</p>'; return; }
+  box.innerHTML = ESTADO.alumnos.map(function (a) {
+    return '<div class="card" data-id="' + a.id + '">' +
+      '<div class="row" style="justify-content: space-between"><h3>' + esc(a.nombre) + '</h3>' +
+      (a.dispositivos ? '<span class="pill ok">Conectado</span>' : '<span class="pill">Todavía no abrió su link</span>') + '</div>' +
+      '<div class="row"><button class="btn" data-act="copiar">Copiar link de invitación</button><button class="btn" data-act="wa">Mandar por WhatsApp</button></div>' +
+      '<div class="prog"><strong>Progreso</strong>' + resumenProgreso(a.id) + '</div>' +
+      '<div class="row"><button class="btn" data-act="nuevo">Hacer un link nuevo</button><button class="btn danger" data-act="borrar">Borrar alumno</button></div>' +
+      '</div>';
+  }).join('');
+}
+function mensajeInvitacion(a) {
+  return 'Hola ' + a.nombre + '. Este es tu link para Tablero en Voz: ' + Datos.linkInvitacion(a.codigo) + ' . Abrilo una vez en tu computadora y ya quedan tus clases ahí.';
+}
+$('lalumnos').onclick = function (e) {
+  var b = e.target.closest('[data-act]'); if (!b) return;
+  var id = b.closest('.card').dataset.id, a = ESTADO.alumnos.find(function (x) { return x.id === id; });
+  var act = b.dataset.act;
+  if (act === 'copiar') {
+    var link = Datos.linkInvitacion(a.codigo);
+    (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject()).then(function () { status('Link copiado: ' + link); }, function () { status('Copiá este link: ' + link); });
+  } else if (act === 'wa') {
+    window.open('https://wa.me/?text=' + encodeURIComponent(mensajeInvitacion(a)), '_blank', 'noopener');
+  } else if (act === 'nuevo') {
+    if (!confirm('El link anterior deja de funcionar y ' + a.nombre + ' tiene que abrir el nuevo. ¿Seguimos?')) return;
+    Datos.nuevoCodigo(id).then(function () { status('Link nuevo creado. Mandáselo a ' + a.nombre + '.'); return recargar(); }).catch(falla);
+  } else if (act === 'borrar') {
+    if (!confirm('¿Borrar a ' + a.nombre + ' y todo su progreso? No se puede deshacer.')) return;
+    Datos.borrarAlumno(id).then(recargar).catch(falla);
+  }
+};
+
+// ---------- clases ----------
+function pintarClases() {
+  var box = $('lclases');
+  if (!ESTADO.clases.length) { box.innerHTML = '<p class="muted">Todavía no hay clases. Creá una y agregale partidas o estudios de Lichess.</p>'; return; }
+  box.innerHTML = ESTADO.clases.map(function (c) {
+    var nq = 0, na = 0, nt = 0;
+    c.capitulos.forEach(function (cap) { Object.keys(cap.notas || {}).forEach(function (k) { var x = cap.notas[k]; if (x.p) nq++; if (x.a) na++; if (x.t) nt++; }); });
+    var asig = ESTADO.alumnos.map(function (a) {
+      var on = ESTADO.asign.some(function (s) { return s.clase_id === c.id && s.alumno_id === a.id; });
+      return '<label class="check"><input type="checkbox" data-alumno="' + a.id + '"' + (on ? ' checked' : '') + '> ' + esc(a.nombre) + '</label>';
+    }).join('');
+    return '<div class="card" data-id="' + c.id + '"><h3>' + esc(c.titulo) + '</h3>' +
+      '<p class="muted" style="margin: 0">' + c.capitulos.length + ' capítulos · ' + nt + ' comentarios · ' + na + ' audios · ' + nq + ' preguntas</p>' +
+      (ESTADO.alumnos.length ? '<div><strong>La ven:</strong><div class="row">' + asig + '</div></div>' : '<p class="hint">Agregá alumnos para asignarles esta clase.</p>') +
+      '<div class="row"><button class="btn primary" data-act="editar">Editar</button><button class="btn danger" data-act="borrar">Borrar</button></div></div>';
+  }).join('');
+}
+$('lclases').onchange = function (e) {
+  var cb = e.target.closest('input[data-alumno]'); if (!cb) return;
+  var cid = cb.closest('.card').dataset.id;
+  Datos.asignar(cid, cb.dataset.alumno, cb.checked).then(function () { status(cb.checked ? 'Clase asignada.' : 'Clase quitada.'); return Datos.asignaciones(); })
+    .then(function (a) { ESTADO.asign = a; pintarAlumnos(); }).catch(function (err) { cb.checked = !cb.checked; falla(err); });
+};
+$('lclases').onclick = function (e) {
+  var b = e.target.closest('[data-act]'); if (!b) return;
+  var c = ESTADO.clases.find(function (x) { return x.id === b.closest('.card').dataset.id; });
+  if (b.dataset.act === 'editar') abrirEditor(JSON.parse(JSON.stringify(c)));
+  else if (confirm('¿Borrar la clase “' + c.titulo + '”? No se puede deshacer.')) {
+    var audios = [];
+    c.capitulos.forEach(function (cap) { Object.keys(cap.notas || {}).forEach(function (k) { if (cap.notas[k].a) audios.push(cap.notas[k].a); }); });
+    Datos.borrarClase(c.id).then(function () { audios.forEach(function (p) { Datos.borrarAudio(p).catch(function () {}); }); return recargar(); }).catch(falla);
+  }
+};
+$('nclase').onclick = function () { abrirEditor({ id: Datos.nuevoId(), titulo: 'Clase ' + (ESTADO.clases.length + 1), capitulos: [] }); };
+
+// ---------- editor ----------
+var sucio = false, timer = null, guardando = Promise.resolve();
+function cambio() { sucio = true; $('guardado').textContent = 'Guardando…'; clearTimeout(timer); timer = setTimeout(guardar, 1200); }
+function guardar() {
+  clearTimeout(timer);
+  var c = ESTADO.clase; if (!c) return guardando;
+  guardando = guardando.then(function () {
+    return Datos.guardarClase(c).then(function () { sucio = false; $('guardado').textContent = 'Guardado ✓'; })
+      .catch(function (e) { $('guardado').textContent = 'No se pudo guardar: ' + e.message; });
+  });
+  return guardando;
+}
+function salirEditor() {
+  if (!ESTADO.clase) return true;
+  if (sucio) guardar();
+  ESTADO.clase = null; return true;
+}
+window.addEventListener('beforeunload', function (e) { if (sucio || grabando) { e.preventDefault(); e.returnValue = ''; } });
+$('volver').onclick = function () { guardar().then(function () { ESTADO.clase = null; pestaña('cla'); recargar(); }); };
+
+function abrirEditor(c) {
+  ESTADO.clase = c; ESTADO.ci = 0; ESTADO.ply = 0; sucio = false;
+  $('ctitulo').value = c.titulo; $('guardado').textContent = '';
+  pestaña('edit'); pintarEditor();
+  if (!ESTADO.clases.some(function (x) { return x.id === c.id; })) cambio();
+}
+$('ctitulo').oninput = function () { ESTADO.clase.titulo = $('ctitulo').value.trim() || 'Sin título'; cambio(); };
+
+function cap() { return ESTADO.clase.capitulos[ESTADO.ci]; }
+function pintarEditor() {
+  var c = ESTADO.clase;
+  $('lchaps').innerHTML = c.capitulos.map(function (k, i) {
+    return '<div class="chap' + (i === ESTADO.ci ? ' cur' : '') + '" data-i="' + i + '">' +
+      '<button class="btn" data-act="ir" title="' + esc(k.titulo) + '">' + (i + 1) + '. ' + esc(k.titulo) + '</button>' +
+      '<button class="btn" data-act="sube" aria-label="Subir" ' + (i ? '' : 'disabled') + '>↑</button>' +
+      '<button class="btn" data-act="baja" aria-label="Bajar" ' + (i < c.capitulos.length - 1 ? '' : 'disabled') + '>↓</button>' +
+      '<button class="btn danger" data-act="quita" aria-label="Borrar capítulo">✕</button></div>';
+  }).join('') || '<p class="muted">Sin capítulos.</p>';
+  var hay = !!cap();
+  show('nochap', !hay); show('chapedit', hay);
+  if (hay) pintarCapitulo();
+}
+$('lchaps').onclick = function (e) {
+  var b = e.target.closest('[data-act]'); if (!b) return;
+  var i = +b.closest('.chap').dataset.i, caps = ESTADO.clase.capitulos, act = b.dataset.act;
+  if (act === 'ir') { ESTADO.ci = i; ESTADO.ply = 0; }
+  else if (act === 'sube' || act === 'baja') { var j = act === 'sube' ? i - 1 : i + 1; var t = caps[i]; caps[i] = caps[j]; caps[j] = t; ESTADO.ci = j; cambio(); }
+  else if (act === 'quita') {
+    if (!confirm('¿Borrar el capítulo “' + caps[i].titulo + '”?')) return;
+    Object.keys(caps[i].notas || {}).forEach(function (k) { if (caps[i].notas[k].a) Datos.borrarAudio(caps[i].notas[k].a).catch(function () {}); });
+    caps.splice(i, 1); ESTADO.ci = Math.max(0, Math.min(ESTADO.ci, caps.length - 1)); ESTADO.ply = 0; cambio();
+  }
+  pintarEditor();
+};
+
+// Importar: link de Lichess, PGN (una o varias partidas) o FEN.
+function textoAImportar(t) {
+  t = t.trim();
+  var m;
+  if ((m = t.match(/lichess\.org\/study\/([A-Za-z0-9]{8})\/([A-Za-z0-9]{8})/))) return fetchTexto('https://lichess.org/api/study/' + m[1] + '/' + m[2] + '.pgn?orientation=true&clocks=false');
+  if ((m = t.match(/lichess\.org\/study\/([A-Za-z0-9]{8})/))) return fetchTexto('https://lichess.org/api/study/' + m[1] + '.pgn?orientation=true&clocks=false');
+  if ((m = t.match(/lichess\.org\/([A-Za-z0-9]{8})(?:[A-Za-z0-9]{4})?(?:\/(white|black))?/))) {
+    var lado = m[2] === 'black' ? 'b' : 'w';
+    return fetchTexto('https://lichess.org/game/export/' + m[1] + '?clocks=false&evals=false').then(function (pgn) { return { pgn: pgn, lado: lado }; });
+  }
+  if (/^[rnbqkpRNBQKP1-8]+(\/[rnbqkpRNBQKP1-8]+){7}(\s|$)/.test(t)) return Promise.resolve({ fen: t });
+  return Promise.resolve(t);
+}
+function fetchTexto(url) {
+  return fetch(url, { headers: { Accept: 'application/x-chess-pgn' } }).then(function (r) {
+    if (r.status === 404) throw new Error('Lichess no encuentra eso. Si es un estudio, fijate que sea público o “no listado”.');
+    if (!r.ok) throw new Error('Lichess respondió con un error (' + r.status + '). Probá de nuevo en un rato.');
+    return r.text();
+  });
+}
+function nuevoCapitulo(parsed, lado) {
+  return { id: Datos.nuevoId(), titulo: parsed.titulo, fen: parsed.fen, jugadas: parsed.jugadas, notas: parsed.notas, lado: lado || parsed.lado };
+}
+$('impgo').onclick = function () {
+  var t = $('imp').value; if (!t.trim()) return status('Pegá primero un link, un PGN o un FEN.', true);
+  status('Leyendo…');
+  textoAImportar(t).then(function (r) {
+    var nuevos = [];
+    if (r && r.fen) {
+      var f = PGN.completar(r.fen), c = new Chess();
+      if (!c.validate_fen(f).valid) throw new Error('Ese FEN no es válido: ' + c.validate_fen(f).error);
+      nuevos.push({ id: Datos.nuevoId(), titulo: 'Posición ' + (ESTADO.clase.capitulos.length + 1), fen: f, jugadas: [], notas: {}, lado: f.split(' ')[1] });
+    } else {
+      var pgn = typeof r === 'string' ? r : r.pgn;
+      PGN.separar(pgn).forEach(function (g) { nuevos.push(nuevoCapitulo(PGN.leer(g), r.lado)); });
+      if (!nuevos.length) throw new Error('No encontré ninguna partida en ese texto.');
+    }
+    var caps = ESTADO.clase.capitulos;
+    ESTADO.ci = caps.length; ESTADO.ply = 0;
+    nuevos.forEach(function (n) { caps.push(n); });
+    $('imp').value = '';
+    status(nuevos.length === 1 ? 'Capítulo agregado.' : nuevos.length + ' capítulos agregados.');
+    cambio(); pintarEditor();
+  }).catch(falla);
+};
+$('impstart').onclick = function () {
+  var caps = ESTADO.clase.capitulos;
+  caps.push({ id: Datos.nuevoId(), titulo: 'Capítulo ' + (caps.length + 1), fen: PGN.START, jugadas: [], notas: {}, lado: 'w' });
+  ESTADO.ci = caps.length - 1; ESTADO.ply = 0; cambio(); pintarEditor();
+};
+
+$('chtitulo').oninput = function () { cap().titulo = $('chtitulo').value.trim() || 'Sin título'; cambio(); pintarListaCapsSolo(); };
+function pintarListaCapsSolo() { var b = document.querySelector('.chap.cur > button'); if (b) b.textContent = (ESTADO.ci + 1) + '. ' + cap().titulo; }
+$('chlado').onchange = function () { cap().lado = $('chlado').value; cambio(); pintarCapitulo(); };
+$('qlado').onclick = function () { PGN.marcarPreguntas(cap(), cap().lado); cambio(); pintarCapitulo(); status('Marcadas como pregunta todas las jugadas de ' + (cap().lado === 'w' ? 'blancas' : 'negras') + '.'); };
+$('qnone').onclick = function () { var n = cap().notas; Object.keys(n).forEach(function (k) { delete n[k].p; limpiarNota(+k); }); cambio(); pintarCapitulo(); };
+
+function posiciones(c) {
+  var ch = new Chess(); ch.load(c.fen); var fens = [ch.fen()], moves = [];
+  c.jugadas.forEach(function (san) { var m = ch.move(san, { sloppy: true }); if (m) { moves.push(m); fens.push(ch.fen()); } });
+  return { fens: fens, moves: moves };
+}
+var GLYPH = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
+function etiqueta(c, k, moves) {
+  if (k === 0) return 'Inicio';
+  var fen = posiciones.cache.fens[k - 1], num = +fen.split(' ')[5] || 1;
+  return num + (moves[k - 1].color === 'w' ? '. ' : '… ') + sanEs(moves[k - 1].san);
+}
+function sanEs(san) { return san.replace(/[KQRBN]/g, function (c) { return { K: 'R', Q: 'D', R: 'T', B: 'A', N: 'C' }[c]; }); }
+function pintarCapitulo() {
+  var c = cap(), pos = posiciones(c); posiciones.cache = pos;
+  ESTADO.ply = Math.max(0, Math.min(ESTADO.ply, c.jugadas.length));
+  $('chtitulo').value = c.titulo; $('chlado').value = c.lado || 'w';
+  $('qlado').textContent = 'Todas las de ' + ((c.lado || 'w') === 'w' ? 'blancas' : 'negras');
+  // tablero
+  var ch = new Chess(); ch.load(pos.fens[ESTADO.ply]);
+  var lm = ESTADO.ply ? pos.moves[ESTADO.ply - 1] : null, b = ch.board(), html = '';
+  for (var i = 0; i < 8; i++) for (var j = 0; j < 8; j++) {
+    var r = c.lado === 'b' ? 7 - i : i, f = c.lado === 'b' ? 7 - j : j, p = b[r][f];
+    var sq = 'abcdefgh'[f] + (8 - r);
+    html += '<div class="' + ((r + f) % 2 ? 'd' : 'l') + (lm && (lm.from === sq || lm.to === sq) ? ' hl' : '') + '">' + (p ? '<span class="pc-' + p.color + '">' + GLYPH[p.type] + '︎</span>' : '') + '</div>';
+  }
+  $('tb').innerHTML = html;
+  // jugadas
+  var mh = '';
+  for (var k = 0; k <= c.jugadas.length; k++) {
+    var n = c.notas[k] || {};
+    var ic = (n.p ? '❓' : '') + (n.t ? '💬' : '') + (n.a ? '🎤' : '');
+    mh += '<button class="mv' + (k === ESTADO.ply ? ' cur' : '') + '" data-k="' + k + '">' + esc(etiqueta(c, k, pos.moves)) + (ic ? '<span class="ic">' + ic + '</span>' : '') + '</button>';
+  }
+  $('lmoves').innerHTML = mh;
+  var cur = $('lmoves').querySelector('.cur'); if (cur) cur.scrollIntoView({ block: 'nearest' });
+  pintarNota();
+}
+function pintarNota() {
+  var c = cap(), k = ESTADO.ply, n = c.notas[k] || {};
+  $('notelabel').textContent = k === 0 ? 'Introducción del capítulo (se lee al abrirlo)' : 'Jugada ' + etiqueta(c, k, posiciones.cache.moves);
+  show('qwrap', k > 0); $('nq').checked = !!n.p;
+  $('nt').value = n.t || '';
+  show('aplay', !!n.a); show('adel', !!n.a);
+  if (!grabando) { $('arec').textContent = n.a ? '🎤 Volver a grabar' : '🎤 Grabar audio'; $('astat').textContent = ''; }
+  $('cut').disabled = k >= c.jugadas.length;
+}
+$('lmoves').onclick = function (e) { var b = e.target.closest('[data-k]'); if (b && !grabando) { ESTADO.ply = +b.dataset.k; pintarCapitulo(); } };
+function irPly(k) { if (grabando) return; ESTADO.ply = k; pintarCapitulo(); }
+$('pfirst').onclick = function () { irPly(0); };
+$('pprev').onclick = function () { irPly(Math.max(0, ESTADO.ply - 1)); };
+$('pnext').onclick = function () { irPly(Math.min(cap().jugadas.length, ESTADO.ply + 1)); };
+$('plast').onclick = function () { irPly(cap().jugadas.length); };
+
+function nota(k) { var c = cap(); return c.notas[k] = c.notas[k] || {}; }
+function limpiarNota(k) { var n = cap().notas[k]; if (n && !n.t && !n.a && !n.p) delete cap().notas[k]; }
+function refrescarIconos() { var k = ESTADO.ply, b = $('lmoves').querySelector('[data-k="' + k + '"]'), n = cap().notas[k] || {}; if (!b) return; var ic = (n.p ? '❓' : '') + (n.t ? '💬' : '') + (n.a ? '🎤' : ''); b.innerHTML = esc(etiqueta(cap(), k, posiciones.cache.moves)) + (ic ? '<span class="ic">' + ic + '</span>' : ''); }
+$('nt').oninput = function () { var k = ESTADO.ply; nota(k).t = $('nt').value.trim(); if (!nota(k).t) delete nota(k).t; limpiarNota(k); cambio(); refrescarIconos(); };
+$('nq').onchange = function () { var k = ESTADO.ply; if ($('nq').checked) nota(k).p = true; else delete nota(k).p; limpiarNota(k); cambio(); refrescarIconos(); };
+
+$('fadd').onsubmit = function (e) {
+  e.preventDefault();
+  var c = cap(), t = $('addmv').value.trim(); if (!t) return;
+  var ch = new Chess(); ch.load(posiciones(c).fens[c.jugadas.length]);
+  var san = t.replace(/^\d+\.+\s*/, '').replace(/[CAD TR]/g, function (x) { return { C: 'N', A: 'B', D: 'Q', T: 'R', R: 'K', ' ': '' }[x]; });
+  var m = ch.move(san, { sloppy: true }) || ch.move(t, { sloppy: true });
+  if (!m) return status('“' + t + '” no es legal al final del capítulo. Usá notación como Cf3, e4, O-O o e2e4.', true);
+  c.jugadas.push(m.san); $('addmv').value = ''; ESTADO.ply = c.jugadas.length; status(''); cambio(); pintarCapitulo();
+};
+$('cut').onclick = function () {
+  var c = cap(), k = ESTADO.ply;
+  if (!confirm('¿Borrar las ' + (c.jugadas.length - k) + ' jugadas que siguen a esta posición, con sus comentarios y audios?')) return;
+  for (var j = k + 1; j <= c.jugadas.length; j++) { var n = c.notas[j]; if (n && n.a) Datos.borrarAudio(n.a).catch(function () {}); delete c.notas[j]; }
+  c.jugadas = c.jugadas.slice(0, k); cambio(); pintarCapitulo();
+};
+
+// ---------- audio ----------
+var grabando = null;
+function mimeAudio() {
+  var opts = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm'];
+  for (var i = 0; i < opts.length; i++) if (window.MediaRecorder && MediaRecorder.isTypeSupported(opts[i])) return opts[i];
+  return '';
+}
+$('arec').onclick = function () {
+  if (grabando) return grabando.rec.stop();
+  if (!navigator.mediaDevices || !window.MediaRecorder) return status('Este navegador no puede grabar audio. Probá con Chrome o Edge.', true);
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+    var mime = mimeAudio(), rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined), parts = [], t0 = Date.now();
+    var k = ESTADO.ply, capRef = cap();
+    grabando = { rec: rec };
+    rec.ondataavailable = function (e) { if (e.data.size) parts.push(e.data); };
+    rec.onstop = function () {
+      stream.getTracks().forEach(function (t) { t.stop(); });
+      clearInterval(grabando.tick); clearTimeout(grabando.max); grabando = null;
+      $('arec').className = 'btn';
+      var type = (rec.mimeType || mime || 'audio/webm').split(';')[0], blob = new Blob(parts, { type: type });
+      var ext = /mp4/.test(type) ? 'm4a' : /ogg/.test(type) ? 'ogg' : 'webm';
+      if (Date.now() - t0 < 700) { $('astat').textContent = 'Muy corto; no lo guardé.'; pintarNota(); return; }
+      $('astat').textContent = 'Subiendo…';
+      Datos.subirAudio(blob, ext).then(function (path) {
+        var n = capRef.notas[k] = capRef.notas[k] || {}, viejo = n.a;
+        n.a = path; if (viejo) Datos.borrarAudio(viejo).catch(function () {});
+        cambio();
+        if (cap() === capRef && ESTADO.ply === k) { pintarNota(); refrescarIconos(); $('astat').textContent = 'Audio guardado ✓'; }
+      }).catch(function (e) { $('astat').textContent = 'No se pudo subir: ' + e.message; });
+    };
+    rec.start();
+    $('arec').textContent = '⏹ Detener'; $('arec').className = 'btn rec';
+    grabando.tick = setInterval(function () { var s = Math.round((Date.now() - t0) / 1000); $('astat').innerHTML = '<span class="rec-dot"></span> Grabando ' + Math.floor(s / 60) + ':' + ('0' + s % 60).slice(-2); }, 250);
+    grabando.max = setTimeout(function () { if (rec.state === 'recording') rec.stop(); }, 5 * 60 * 1000);
+  }).catch(function () { status('No tengo permiso para usar el micrófono. Habilitalo en el candado de la barra de direcciones.', true); });
+};
+var reproductor = null;
+$('aplay').onclick = function () {
+  var n = cap().notas[ESTADO.ply]; if (!n || !n.a) return;
+  if (reproductor) reproductor.pause();
+  Datos.urlAudio(n.a).then(function (url) { reproductor = new Audio(url); return reproductor.play(); }).catch(falla);
+};
+$('adel').onclick = function () {
+  var k = ESTADO.ply, n = cap().notas[k]; if (!n || !n.a || !confirm('¿Borrar este audio?')) return;
+  Datos.borrarAudio(n.a).catch(function () {}); delete n.a; limpiarNota(k); cambio(); pintarNota(); refrescarIconos();
+};
+
+// ---------- arranque ----------
+show('demobar', Datos.modo === 'demo');
+Datos.alCambiarSesion(function (ev) { if (ev === 'SIGNED_IN' && !ESTADO.perfil) arrancar(); });
+arrancar().catch(function (e) { show('vlogin', true); falla(e); });
+</script>
+</body>
+</html>

@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Tablero en Voz</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -165,6 +166,16 @@ th { color: var(--muted); font-weight: 700; font-size: .85rem; text-transform: u
         <button class="btn" id="testvoice2">Probar voz</button>
       </div>
 
+      <details open id="misclases" hidden>
+        <summary>Mis clases</summary>
+        <div class="dbody">
+          <p class="hint" id="mcquien" style="margin: 0"></p>
+          <div class="quick" id="mclases" aria-label="Clases"></div>
+          <div class="quick" id="mcaps" aria-label="Capítulos de la clase abierta"></div>
+          <p class="hint" style="margin: 0">Teclas: k abre la siguiente clase, punto y coma cambian de capítulo, d dice dónde estás, o repite el comentario y el audio del profesor, p da una pista en las preguntas.</p>
+        </div>
+      </details>
+
       <details open>
         <summary>Cargar partida o posición</summary>
         <div class="dbody">
@@ -225,8 +236,10 @@ th { color: var(--muted); font-weight: 700; font-size: .85rem; text-transform: u
       </details>
     </section>
   </div>
+  <p class="hint">¿Sos profesor? <a href="profesor.html">Entrá al panel del profesor</a> para armar clases y seguir el progreso de tus alumnos.</p>
 </div>
 
+<script src="js/datos.js"></script>
 <script>
 // Load chess.js with a fallback CDN.
 (function () {
@@ -567,10 +580,14 @@ function speak(text) {
 }
 var pendingSpeak = null;
 // Also drop a speak() still waiting out its post-cancel delay, or it would start after hushing.
-function hush() { clearTimeout(pendingSpeak); if (window.speechSynthesis) speechSynthesis.cancel(); }
+function hush() { clearTimeout(pendingSpeak); pararAudio(); if (window.speechSynthesis) speechSynthesis.cancel(); }
+var audioNota = null;
+function pararAudio() { if (audioNota) { audioNota.pause(); audioNota = null; } }
 
 function say(text, opts) {
   opts = opts || {};
+  // Anything new to say cuts off the teacher's audio that might be playing.
+  pararAudio();
   lastSpoken = text;
   var out = $('out'); out.textContent = text; out.classList.toggle('err', !!opts.err);
   speak(text);
@@ -610,6 +627,7 @@ function setGame(startFen, moves, headers, title) {
   for (var i = 0; i < moves.length; i++) { var m = c.move(moves[i], { sloppy: true }); if (!m) break; vmoves.push(m); fens.push(c.fen()); }
   G.startFen = fens[0]; G.main = vmoves; G.fens = fens; G.ply = 0; G.varBase = null; G.varMoves = []; G.varFens = [];
   G.headers = headers || {}; G.title = title || 'Partida'; G.puzzle = null; G.selected = null; G.origLen = vmoves.length;
+  G.lec = null; G.quiz = null;
 }
 
 // ---------- rendering ----------
@@ -657,7 +675,8 @@ function goPly(p, announce) {
   G.ply = p; render();
   if (announce === false) return;
   var t = p === 0 ? 'Posición inicial de la partida. ' + statusText(curChess()) : lastMoveText() + afterMove();
-  say(t + extraAfterMove());
+  say(t + extraAfterMove() + textoNota(p));
+  despuesDeMover();
 }
 function afterMove() { var c = curChess(); if (c.in_checkmate()) return ' Ganan ' + sideName(c.turn() === 'w' ? 'b' : 'w') + '.'; return ' ' + statusText(c); }
 function extraAfterMove() {
@@ -667,8 +686,10 @@ function extraAfterMove() {
 }
 function next() {
   if (inVar()) return say('Estás en una variante. Escribí “volver” para regresar a la partida.');
-  if (G.ply >= G.main.length) return say('Ya estás en la última jugada.');
-  G.ply++; render(); say(lastMoveText() + (curChess().game_over() ? afterMove() : '') + extraAfterMove());
+  if (G.ply >= G.main.length) return say('Ya estás en la última jugada.' + (G.lec ? finCapitulo() : ''));
+  if (esPregunta(G.ply + 1)) return preguntar();
+  G.ply++; render(); say(lastMoveText() + (curChess().game_over() ? afterMove() : '') + extraAfterMove() + textoNota(G.ply) + (G.ply === G.main.length && G.lec ? finCapitulo() : ''));
+  despuesDeMover();
 }
 function prev() {
   if (inVar()) {
@@ -708,6 +729,7 @@ function playTyped(raw) {
   var m = tryMove(chess, raw, S.notation);
   if (!m) return false;
   var uci = m.from + m.to + (m.promotion || '');
+  if (G.quiz && !inVar() && G.ply === G.quiz.ply - 1) return responder(m, before);
   if (G.puzzle && !G.puzzle.done) return puzzleMove(m, uci, chess, before);
   pushMove(m, chess.fen());
   say(movePrefix(before, m) + moveSentence(m) + '.' + afterMove() + extraAfterMove());
@@ -882,6 +904,208 @@ function handleLoad(txt) {
   }
 }
 
+// ---------- clases del profesor ----------
+// L.clases viene de Datos (js/datos.js); el formato de cada capítulo está descrito en js/pgn.js.
+var L = { alumno: null, clases: [], prog: {}, ci: -1, guardar: null };
+function notaDe(ply) { return G.lec && G.lec.cap.notas ? G.lec.cap.notas[ply] : null; }
+function esPregunta(ply) { var n = notaDe(ply); return !!(n && n.p && !inVar() && ply <= G.main.length); }
+function textoNota(ply) { var n = notaDe(ply); return n && n.t ? '\nComentario: ' + n.t : ''; }
+function capProg() {
+  var c = L.clases[L.ci], d = L.prog[c.id] = L.prog[c.id] || {};
+  d.caps = d.caps || {};
+  return d.caps[G.lec.cap.id] = d.caps[G.lec.cap.id] || { max: 0, preg: {} };
+}
+function guardarProgreso() {
+  if (!G.lec || !L.alumno) return;
+  var c = L.clases[L.ci], d = L.prog[c.id];
+  d.ult = { k: G.lec.k, p: G.ply }; d.fecha = new Date().toISOString();
+  clearTimeout(L.guardar);
+  L.guardar = setTimeout(function () { Datos.guardarProgreso(L.alumno.id, c.id, d).catch(function () {}); }, 1200);
+}
+function despuesDeMover() {
+  if (!G.lec || inVar()) return;
+  var p = capProg(); if (G.ply > p.max) p.max = G.ply;
+  guardarProgreso();
+  reproducirNota(G.ply);
+}
+function finCapitulo() {
+  var c = L.clases[L.ci], k = G.lec.k;
+  return k < c.capitulos.length - 1 ? ' Terminó el capítulo. Apretá punto para pasar al siguiente.' : ' Terminó el último capítulo de esta clase.';
+}
+// The teacher's recording plays once the spoken text is over.
+function reproducirNota(ply, avisar) {
+  var n = notaDe(ply); if (!n || !n.a) return avisar && say('Esta jugada no tiene audio del profesor.' + textoNota(ply));
+  var cap = G.lec.cap, ok = function () { return G.lec && G.lec.cap === cap && G.ply === ply; };
+  Datos.urlAudio(n.a).then(function (url) {
+    var t0 = Date.now();
+    (function esperar() {
+      if (!ok()) return;
+      var ss = window.speechSynthesis;
+      if (Date.now() - t0 < 400 || (S.tts && ss && (ss.speaking || ss.pending) && Date.now() - t0 < 60000)) return setTimeout(esperar, 200);
+      pararAudio();
+      var a = audioNota = new Audio(url);
+      a.play().catch(function () { if (audioNota === a) $('out').textContent += ' (Hay un audio del profesor: apretá o para escucharlo.)'; });
+    })();
+  }).catch(function () { say('No pude bajar el audio del profesor. Revisá la conexión.', { err: true }); });
+}
+
+function preguntar(repetir) {
+  if (!G.quiz || G.quiz.ply !== G.ply + 1) G.quiz = { ply: G.ply + 1, i: 0, h: 0 };
+  var turno = sideName(curChess().turn());
+  say(repetir || G.quiz.i || G.quiz.h ? 'Seguimos con la pregunta: ¿qué jugarías? Juegan ' + turno + '. Si no sabés, apretá p para una pista.'
+    : 'Pregunta: ¿qué jugarías acá? Juegan ' + turno + '. Apretá Enter, escribí la jugada y Enter. La p te da una pista.');
+}
+function registrarPregunta(resultado) {
+  var p = capProg(), q = G.quiz;
+  // Only the first time counts: that's what tells the teacher how it went.
+  if (!p.preg[q.ply]) p.preg[q.ply] = { i: q.i, h: q.h, ok: resultado === 'ok', rev: resultado === 'rev' };
+}
+function responder(m, before) {
+  var want = G.main[G.ply];
+  if (m.from !== want.from || m.to !== want.to || (m.promotion || '') !== (want.promotion || '')) {
+    G.quiz.i++;
+    say('No es la que eligió tu profesor: ' + moveSentence(m) + '. Probá otra' + (G.quiz.i >= 2 ? ', o apretá p para una pista.' : '.'), { err: true });
+    return true;
+  }
+  var first = !G.quiz.i && !G.quiz.h;
+  registrarPregunta('ok'); G.quiz = null;
+  G.ply++; render();
+  say((first ? '¡Muy bien, a la primera! ' : '¡Bien! ') + movePrefix(before, m) + moveSentence(m) + '.' + (curChess().game_over() ? afterMove() : '') + textoNota(G.ply) +
+      (G.ply === G.main.length ? finCapitulo() : ' Apretá s para seguir.'));
+  despuesDeMover();
+  return true;
+}
+function pistaPregunta() {
+  var q = G.quiz, want = G.main[G.ply], map = boardMap(curChess()), pz = map[want.from];
+  q.h++;
+  if (q.h === 1) return say('Pista: la jugada es con ' + (NAMES[pz.type][2] === 'f' ? 'la ' : 'el ') + NAMES[pz.type][0] + '. Apretá p otra vez si querés más ayuda.');
+  if (q.h === 2) return say('Pista: mové ' + (NAMES[pz.type][2] === 'f' ? 'la ' : 'el ') + NAMES[pz.type][0] + ' de ' + want.from + '. Si apretás p otra vez te digo la respuesta.');
+  return revelar();
+}
+function revelar() {
+  var before = curFen(), m = G.main[G.ply];
+  registrarPregunta('rev'); G.quiz = null;
+  G.ply++; render();
+  say('La jugada era: ' + movePrefix(before, m) + moveSentence(m) + '.' + textoNota(G.ply) + (G.ply === G.main.length ? finCapitulo() : ' Apretá s para seguir.'));
+  despuesDeMover();
+}
+
+function abrirClase(i, retomar) {
+  L.ci = i;
+  var c = L.clases[i], d = L.prog[c.id] || {}, u = retomar && d.ult;
+  if (!c.capitulos.length) { pintarMisClases(); return say('La clase ' + c.titulo + ' todavía no tiene capítulos.'); }
+  abrirCapitulo(u && u.k < c.capitulos.length ? u.k : 0, u ? u.p : 0, 'Clase ' + (i + 1) + ' de ' + L.clases.length + ': ' + c.titulo + '. ');
+}
+function abrirCapitulo(k, ply, pre) {
+  var c = L.clases[L.ci], cap = c.capitulos[k];
+  stopLive(true);
+  setGame(cap.fen, cap.jugadas, {}, c.titulo + ' · ' + cap.titulo);
+  G.lec = { cap: cap, k: k };
+  G.persp = cap.lado === 'b' ? 'b' : 'w'; $('persp').value = G.persp;
+  G.ply = Math.max(0, Math.min(ply || 0, G.main.length));
+  render(); pintarMisClases();
+  var nq = Object.keys(cap.notas || {}).filter(function (x) { return cap.notas[x].p; }).length;
+  var t = (pre || '') + 'Capítulo ' + (k + 1) + ' de ' + c.capitulos.length + ': ' + cap.titulo + '. ';
+  if (G.ply) t += 'Seguís donde quedaste. ' + lastMoveText();
+  else {
+    t += G.main.length ? G.main.length + ' medios movimientos' + (nq ? ', con ' + nq + (nq === 1 ? ' pregunta' : ' preguntas') : '') + '. ' : 'Una posición para analizar. ';
+    t += 'Juegan ' + sideName(curChess().turn()) + '. Apretá s para avanzar.' + textoNota(0);
+  }
+  say(t);
+  var p = capProg(); if (G.ply > p.max) p.max = G.ply;
+  guardarProgreso(); reproducirNota(G.ply);
+}
+function dondeEstoy() {
+  if (!G.lec) return say('Estás en: ' + G.title + '. ' + (G.main.length ? 'Medio movimiento ' + G.ply + ' de ' + G.main.length + '.' : '') + (L.clases.length ? ' Apretá k para abrir tus clases.' : ''));
+  var c = L.clases[L.ci];
+  say('Clase ' + (L.ci + 1) + ' de ' + L.clases.length + ': ' + c.titulo + '. Capítulo ' + (G.lec.k + 1) + ' de ' + c.capitulos.length + ': ' + G.lec.cap.titulo + '. ' +
+      (G.ply ? 'Medio movimiento ' + G.ply + ' de ' + G.main.length + '. ' + lastMoveText() : 'Estás en el inicio del capítulo.') + (G.quiz ? ' Hay una pregunta esperando tu jugada.' : ''));
+}
+function listaClases() {
+  if (!L.clases.length) return 'Todavía no tenés clases. Cuando tu profesor te asigne una, aparece acá.';
+  return 'Tus clases: ' + L.clases.map(function (c, i) { return (i + 1) + ', ' + c.titulo + (L.prog[c.id] ? '' : ', nueva'); }).join('. ') + '. Escribí “clase” y el número para abrir una, o apretá k.';
+}
+function sinClases() { return L.alumno ? 'Todavía no tenés clases asignadas.' : 'No estás conectado con un profesor. Pedile tu link de invitación y abrilo en esta computadora.'; }
+
+// Returns true when the command was about classes.
+function clasesCmd(c, out) {
+  var m;
+  if (/^(pista|p)$/.test(c) && G.quiz && G.ply === G.quiz.ply - 1) return pistaPregunta(), true;
+  if (/^(solucion|respuesta)$/.test(c) && G.quiz && G.ply === G.quiz.ply - 1) return revelar(), true;
+  if (/^(clases|mis clases)$/.test(c)) return out(listaClases()), true;
+  if (/^(donde|donde estoy)$/.test(c)) return dondeEstoy(), true;
+  if (/^(comentario|audio)$/.test(c)) {
+    if (!G.lec) return out('Esto no es una clase de tu profesor, así que no hay comentarios.'), true;
+    var n = notaDe(G.ply);
+    if (n && n.a) { say((n.t ? n.t : 'Audio del profesor.')); reproducirNota(G.ply); } else out(n && n.t ? n.t : 'Esta jugada no tiene comentario ni audio del profesor.');
+    return true;
+  }
+  if ((m = c.match(/^clase (\d+)$/)) || /^(clase siguiente|k)$/.test(c)) {
+    if (!L.clases.length) return out(sinClases()), true;
+    var i;
+    if (m) { i = +m[1] - 1; if (i < 0 || i >= L.clases.length) return out('No hay clase ' + m[1] + '. Tenés ' + L.clases.length + '.'), true; }
+    // First press: the class he was last in (or the newest one). Then it cycles.
+    else i = !G.lec ? ultimaClase() : (L.ci + 1) % L.clases.length;
+    abrirClase(i, true); return true;
+  }
+  if ((m = c.match(/^(?:capitulo|cap) (\d+)$/)) || /^(capitulo siguiente|siguiente capitulo|capitulo anterior|anterior capitulo)$/.test(c)) {
+    if (!G.lec) return out(L.clases.length ? 'Primero abrí una clase: apretá k.' : sinClases()), true;
+    var caps = L.clases[L.ci].capitulos, k = G.lec.k;
+    if (m) k = +m[1] - 1; else k += /siguiente/.test(c) ? 1 : -1;
+    if (k < 0) return out('Ya estás en el primer capítulo.'), true;
+    if (k >= caps.length) return out(m ? 'No hay capítulo ' + m[1] + '. Esta clase tiene ' + caps.length + '.' : 'Ya estás en el último capítulo de esta clase. Apretá k para pasar a otra clase.'), true;
+    var u = (L.prog[L.clases[L.ci].id] || {}).ult;
+    abrirCapitulo(k, u && u.k === k ? u.p : 0); return true;
+  }
+  if (G.quiz && /^(s|sig|siguiente|>)$/.test(c) && G.ply === G.quiz.ply - 1) return preguntar(true), true;
+  return false;
+}
+function ultimaClase() {
+  var best = -1, fecha = '';
+  L.clases.forEach(function (c, i) { var d = L.prog[c.id]; if (d && d.fecha && d.fecha > fecha) { fecha = d.fecha; best = i; } });
+  if (best >= 0) return best;
+  return L.clases.length - 1;
+}
+function pintarMisClases() {
+  $('misclases').hidden = !L.alumno;
+  if (!L.alumno) return;
+  $('mcquien').textContent = 'Conectado como ' + L.alumno.nombre + (L.alumno.profesor ? ', alumno de ' + L.alumno.profesor : '') + '.';
+  $('mclases').innerHTML = L.clases.length ? L.clases.map(function (c, i) {
+    return '<button class="btn' + (G.lec && i === L.ci ? ' primary' : '') + '" data-cmd="clase ' + (i + 1) + '">' + esc(c.titulo) + (L.prog[c.id] ? '' : ' · nueva') + '</button>';
+  }).join('') : '<span class="hint">Todavía no hay clases asignadas.</span>';
+  $('mcaps').innerHTML = G.lec ? L.clases[L.ci].capitulos.map(function (k, i) {
+    return '<button class="btn' + (i === G.lec.k ? ' primary' : '') + '" data-cmd="capitulo ' + (i + 1) + '">' + (i + 1) + '. ' + esc(k.titulo) + '</button>';
+  }).join('') : '';
+}
+function cargarClases() {
+  return Promise.all([Datos.misClases(L.alumno.id), Datos.progreso(L.alumno.id)]).then(function (r) {
+    L.clases = r[0]; L.prog = r[1]; pintarMisClases();
+  });
+}
+// Invitation link (?invitacion=...) or an already linked browser.
+function iniciarClases() {
+  var code = new URLSearchParams(location.search).get('invitacion');
+  var paso = code ? Datos.canjear(code).then(function () {
+    var u = new URL(location.href); u.searchParams.delete('invitacion'); history.replaceState(null, '', u.toString());
+  }) : Promise.resolve();
+  return paso.then(function () { return Datos.miAlumno(); }).then(function (a) {
+    if (!a) return;
+    L.alumno = a;
+    return cargarClases().then(function () {
+      var nuevas = L.clases.filter(function (c) { return !L.prog[c.id]; }).length;
+      var t = (code ? 'Listo, quedaste conectado con tu profesor' + (a.profesor ? ', ' + a.profesor : '') + '. ' : '') + 'Hola ' + a.nombre + '. ';
+      if (!L.clases.length) t += 'Todavía no tenés clases. Cuando tu profesor te asigne una, aparece acá.';
+      else {
+        t += 'Tenés ' + L.clases.length + (L.clases.length === 1 ? ' clase' : ' clases') + (nuevas ? ', ' + nuevas + (nuevas === 1 ? ' nueva' : ' nuevas') : '') + '. ';
+        var u = ultimaClase(), d = L.prog[L.clases[u].id];
+        t += (d ? 'Apretá k para seguir con ' : 'Apretá k para abrir ') + L.clases[u].titulo + '. La h dice todas las teclas.';
+      }
+      $('out').textContent = t; lastSpoken = t;
+      speak(t);
+    });
+  }).catch(function (e) { say(e.message, { err: true }); });
+}
+
 // ---------- commands ----------
 var HELP = [
   ['b · blancas', 'Lista las piezas blancas, agrupadas por tipo.'],
@@ -910,7 +1134,11 @@ var HELP = [
   ['fen', 'Muestra el FEN de la posición actual.'],
   ['nueva', 'Vuelve a la posición inicial.'],
   ['r · repetir', 'Repite lo último que se dijo (Escape calla).'],
-  ['más lento · más rápido', 'Cambia la velocidad de la voz.']
+  ['más lento · más rápido', 'Cambia la velocidad de la voz.'],
+  ['clases · clase 2', 'Lista las clases de tu profesor, o abre una (tecla k: la siguiente).'],
+  ['capítulo 3', 'Abre un capítulo de la clase (teclas punto y coma: siguiente y anterior).'],
+  ['dónde', 'Dice en qué clase, capítulo y jugada estás (tecla d).'],
+  ['comentario', 'Repite el comentario y el audio del profesor en esta jugada (tecla o).']
 ];
 function helpText() {
   return 'Comandos principales. Piezas: “b” blancas, “n” negras, “t” tablero entero, “fila 4”, “columna e”. ' +
@@ -925,13 +1153,16 @@ function helpText() {
 var KEYS = {
   s: 's', a: 'a', b: 'b', n: 'n', t: 't', u: 'u', e: 'estado', m: 'material', x: 'amenazas', j: 'jugadas', l: 'lista',
   r: 'r', z: 'z', v: 'volver', g: 'girar', p: 'pista', '+': 'mas rapido', '-': 'mas lento',
+  k: 'clase siguiente', '.': 'capitulo siguiente', ',': 'capitulo anterior', d: 'donde estoy', o: 'comentario',
   ArrowRight: 's', ArrowLeft: 'a', Home: 'inicio', End: 'fin'
 };
 function keyHelpText() {
   return 'Teclas. Piezas: b blancas, n negras, t tablero entero, un número del 1 al 8 lee esa fila, c y una letra lee esa columna. ' +
     'Partida: s o flecha derecha siguiente, a o flecha izquierda anterior, Inicio y Fin, u última jugada, l lista de jugadas. ' +
     'Análisis: e estado, m material, x amenazas, j jugadas legales. ' +
-    'r repite, espacio o Escape callan, más y menos cambian la velocidad. g gira el tablero, z deshace, v vuelve de la variante, p pista del puzzle. ' +
+    'Clases de tu profesor: k abre la siguiente clase, punto pasa al capítulo siguiente y coma al anterior, d dice dónde estás, o repite el comentario y el audio del profesor. ' +
+    'En una pregunta, p da una pista; la tercera vez te dice la respuesta. ' +
+    'r repite, espacio o Escape callan, más y menos cambian la velocidad. g gira el tablero, z deshace, v vuelve de la variante. ' +
     'Enter para escribir una jugada o un comando; después de escribirlo volvés solo al modo teclas.';
 }
 function norm(s) { return s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[¿¡]/g, '').replace(/\s+/g, ' '); }
@@ -943,6 +1174,7 @@ function run(raw) {
   function out(t) { say(t, echo); }
 
   if (/^(ayuda|help|h|\?)$/.test(c)) return out(helpText());
+  if (clasesCmd(c, out)) return;
   if (/^(b|blancas|piezas blancas)$/.test(c)) return out(listPieces(map, 'w'));
   if (/^(n|negras|piezas negras)$/.test(c)) return out(listPieces(map, 'b'));
   if (/^(p|piezas)$/.test(c)) return out(listPieces(map, 'w') + '\n' + listPieces(map, 'b'));
@@ -1098,6 +1330,7 @@ function boot() {
   $('persp').addEventListener('change', function (e) { G.persp = e.target.value; store('persp', G.persp); render(); });
   $('autoread').addEventListener('change', function (e) { S.autoread = e.target.checked; store('autoread', S.autoread); });
   keys.focus();
+  iniciarClases();
 }
 if (window.Chess) boot(); else window.addEventListener('chessready', boot, { once: true });
 </script>
