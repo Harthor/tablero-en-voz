@@ -75,6 +75,12 @@ label.big { font-weight: 700; font-size: 1.1rem; display: block; margin-bottom: 
   background: var(--bg); color: var(--ink); }
 #cmd:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--sel); }
 .hint { font-size: .92rem; color: var(--muted); margin: 6px 0 0; }
+.keys { padding: 12px 16px; border-radius: 8px; border: 2px dashed var(--line); cursor: pointer; }
+.keys strong { font-size: 1.1rem; }
+.keys:focus { outline: none; border-style: solid; border-color: var(--accent); box-shadow: 0 0 0 3px var(--sel); }
+.keys .on { color: var(--ok); }
+.keys .off { color: var(--muted); font-weight: 400; }
+.keys:focus .off, .keys:not(:focus) .on { display: none; }
 #out { font-size: 1.35rem; line-height: 1.45; min-height: 4.4em; padding: 14px 16px; border-radius: 8px; background: var(--bg);
   border: 1px solid var(--line); white-space: pre-line; overflow-wrap: anywhere; }
 #out.err { color: var(--warn); }
@@ -136,10 +142,14 @@ th { color: var(--muted); font-weight: 700; font-size: .85rem; text-transform: u
     </section>
 
     <section class="panel console" aria-label="Consola">
+      <div id="keys" class="keys" tabindex="0" role="application" aria-label="Modo teclas" aria-describedby="keyshint">
+        <strong>Modo teclas <span class="on">activo</span><span class="off">en pausa: hacé clic acá o apretá Escape en el campo de texto</span></strong>
+        <p class="hint" id="keyshint">Cada tecla hace una pregunta, sin Enter: b blancas, n negras, t tablero, s siguiente, a anterior, u última jugada. La h dice todas las teclas. Enter para escribir una jugada.</p>
+      </div>
       <div>
         <label class="big" for="cmd">Comando o jugada</label>
         <input id="cmd" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="cmdhint" placeholder="ayuda">
-        <p class="hint" id="cmdhint">Escribí y apretá Enter. Con el campo vacío: flechas izquierda y derecha recorren la partida, flecha arriba repite comandos, Escape calla la voz. Escribí <span class="mono">ayuda</span> para escuchar los comandos.</p>
+        <p class="hint" id="cmdhint">Escribí y apretá Enter; después volvés solo al modo teclas. Con el campo vacío: flechas izquierda y derecha recorren la partida, flecha arriba repite comandos, Escape calla la voz y vuelve al modo teclas. Escribí <span class="mono">ayuda</span> para escuchar los comandos.</p>
       </div>
       <div id="out" role="status" aria-live="polite" aria-atomic="true"></div>
       <div class="quick" aria-label="Comandos rápidos">
@@ -151,6 +161,7 @@ th { color: var(--muted); font-weight: 700; font-size: .85rem; text-transform: u
         <button class="btn" data-cmd="amenazas">Amenazas</button>
         <button class="btn" data-cmd="material">Material</button>
         <button class="btn" data-cmd="r">Repetir</button>
+        <button class="btn" data-cmd="callar" title="Parar el audio (Escape)">⏹ Parar audio</button>
         <button class="btn" id="testvoice2">Probar voz</button>
       </div>
 
@@ -550,10 +561,13 @@ function speak(text) {
       liveUtterances.forEach(function (u) { ss.speak(u); });
     };
     // Chrome drops a speak() issued in the same tick as cancel(), so wait a moment after cancelling.
-    if (ss.speaking || ss.pending) { ss.cancel(); setTimeout(go, 150); } else go();
+    clearTimeout(pendingSpeak);
+    if (ss.speaking || ss.pending) { ss.cancel(); pendingSpeak = setTimeout(go, 150); } else go();
   } catch (e) { voiceStatus('No se pudo usar la voz: ' + e.message); }
 }
-function hush() { if (window.speechSynthesis) speechSynthesis.cancel(); }
+var pendingSpeak = null;
+// Also drop a speak() still waiting out its post-cancel delay, or it would start after hushing.
+function hush() { clearTimeout(pendingSpeak); if (window.speechSynthesis) speechSynthesis.cancel(); }
 
 function say(text, opts) {
   opts = opts || {};
@@ -904,7 +918,21 @@ function helpText() {
     'Análisis: “amenazas”, “material”, “estado”, “jugadas”. ' +
     'Partida: “s” siguiente, “a” anterior, “inicio”, “fin”, “ir 15”, “lista”, “u” última jugada. ' +
     'Para jugar escribí la jugada, por ejemplo C f 3 o e 2 e 4. “z” deshace, “volver” sale de la variante. ' +
-    '“r” repite, Escape calla, “más lento” y “más rápido” cambian la voz.';
+    '“r” repite, Escape calla, “más lento” y “más rápido” cambian la voz. ' +
+    'Fuera del campo de texto no hace falta Enter: cada tecla es un comando, y la h dice la lista.';
+}
+// Single-key mode: each key runs a command right away, no Enter needed.
+var KEYS = {
+  s: 's', a: 'a', b: 'b', n: 'n', t: 't', u: 'u', e: 'estado', m: 'material', x: 'amenazas', j: 'jugadas', l: 'lista',
+  r: 'r', z: 'z', v: 'volver', g: 'girar', p: 'pista', '+': 'mas rapido', '-': 'mas lento',
+  ArrowRight: 's', ArrowLeft: 'a', Home: 'inicio', End: 'fin'
+};
+function keyHelpText() {
+  return 'Teclas. Piezas: b blancas, n negras, t tablero entero, un número del 1 al 8 lee esa fila, c y una letra lee esa columna. ' +
+    'Partida: s o flecha derecha siguiente, a o flecha izquierda anterior, Inicio y Fin, u última jugada, l lista de jugadas. ' +
+    'Análisis: e estado, m material, x amenazas, j jugadas legales. ' +
+    'r repite, espacio o Escape callan, más y menos cambian la velocidad. g gira el tablero, z deshace, v vuelve de la variante, p pista del puzzle. ' +
+    'Enter para escribir una jugada o un comando; después de escribirlo volvés solo al modo teclas.';
 }
 function norm(s) { return s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[¿¡]/g, '').replace(/\s+/g, ' '); }
 
@@ -1005,19 +1033,36 @@ function boot() {
   // Example game so the page opens in a working state (Morphy's Opera Game, 1858).
   loadPgn('[Event "Ópera de París (partida de ejemplo)"]\n[White "Morphy"]\n[Black "Duque de Brunswick y Conde Isouard"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 d6 3. d4 Bg4 4. dxe5 Bxf3 5. Qxf3 dxe5 6. Bc4 Nf6 7. Qb3 Qe7 8. Nc3 c6 9. Bg5 b5 10. Nxb5 cxb5 11. Bxb5+ Nbd7 12. O-O-O Rd8 13. Rxd7 Rxd7 14. Rd1 Qe6 15. Bxd7+ Nxd7 16. Qb8+ Nxb8 17. Rd8# 1-0');
   hush();
-  $('out').textContent = 'Cargué de ejemplo la Partida de la Ópera, Morphy 1858. Escribí “s” para avanzar, “b” o “n” para oír las piezas, o “ayuda”. Para usar otra partida, pegala en “Cargar partida o posición”.';
+  $('out').textContent = 'Cargué de ejemplo la Partida de la Ópera, Morphy 1858. Apretá “s” para avanzar, “b” o “n” para oír las piezas, o “h” para escuchar todas las teclas. Para usar otra partida, pegala en “Cargar partida o posición”.';
   lastSpoken = $('out').textContent;
 
-  var cmd = $('cmd');
+  var cmd = $('cmd'), keys = $('keys'), colPending = false;
   cmd.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') { var v = cmd.value; if (v.trim()) { cmdHist.push(v); histIdx = cmdHist.length; } cmd.value = ''; run(v); e.preventDefault(); }
-    else if (e.key === 'Escape') { hush(); }
+    if (e.key === 'Enter') { var v = cmd.value; if (v.trim()) { cmdHist.push(v); histIdx = cmdHist.length; } cmd.value = ''; run(v); keys.focus(); e.preventDefault(); }
+    else if (e.key === 'Escape') { hush(); if (cmd.value === '') keys.focus(); }
     else if (e.key === 'ArrowUp' && (cmd.value === '' || histIdx < cmdHist.length)) { if (histIdx > 0) { histIdx--; cmd.value = cmdHist[histIdx]; } e.preventDefault(); }
     else if (e.key === 'ArrowDown' && histIdx < cmdHist.length) { histIdx++; cmd.value = histIdx < cmdHist.length ? cmdHist[histIdx] : ''; e.preventDefault(); }
     else if (cmd.value === '' && e.key === 'ArrowRight') { next(); e.preventDefault(); }
     else if (cmd.value === '' && e.key === 'ArrowLeft') { prev(); e.preventDefault(); }
   });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hush(); }, true);
+  document.addEventListener('keydown', function (e) {
+    var el = e.target, k = e.key, c = null;
+    // Text fields, selects and sliders keep their keys; so do browser shortcuts.
+    if (e.ctrlKey || e.metaKey || e.altKey || el.isContentEditable || (el.matches && el.matches('input:not([type=checkbox]), textarea, select'))) return;
+    // Enter and Space only belong to the key zone; on a button or checkbox they still press it.
+    var onZone = el === keys || el === document.body;
+    if (colPending) { colPending = false; if (/^[a-h]$/i.test(k)) { e.preventDefault(); run('columna ' + k.toLowerCase()); return; } }
+    if (k === '/' || (k === 'Enter' && onZone)) { e.preventDefault(); cmd.focus(); return; }
+    if (k === ' ' && onZone) { e.preventDefault(); hush(); return; }
+    if (e.repeat && k.length === 1) return;
+    if (/^[1-8]$/.test(k)) c = 'fila ' + k;
+    else if (k === 'h' || k === 'H' || k === '?') { e.preventDefault(); say(keyHelpText()); return; }
+    else if (k === 'c' || k === 'C') { e.preventDefault(); colPending = true; say('Columna: apretá una letra de la a a la h.'); return; }
+    else c = KEYS[k.length === 1 ? k.toLowerCase() : k];
+    if (!c) return;
+    e.preventDefault(); run(c);
+  });
   function testVoice() { if (!window.speechSynthesis) return voiceStatus('Este navegador no tiene síntesis de voz. Probá con Chrome, Edge o Safari actualizados.'); if (!S.tts) { S.tts = true; $('ttson').checked = true; store('tts', true); } voiceStatus('Intentando hablar…'); speak('Hola. Si escuchás esto, la voz funciona.'); setTimeout(function () { if (/Intentando/.test($('vstat').textContent)) voiceStatus('No arrancó la voz. Voces que ofrece el navegador: ' + speechSynthesis.getVoices().length + ' (en español: ' + voices.length + '). Dentro de la app de Claude: ' + (window.self !== window.top ? 'sí' : 'no') + '.'); }, 2500); }
   $('testvoice').addEventListener('click', testVoice);
   $('testvoice2').addEventListener('click', testVoice);
@@ -1052,7 +1097,7 @@ function boot() {
   $('notation').addEventListener('change', function (e) { S.notation = e.target.value; store('notation', S.notation); });
   $('persp').addEventListener('change', function (e) { G.persp = e.target.value; store('persp', G.persp); render(); });
   $('autoread').addEventListener('change', function (e) { S.autoread = e.target.checked; store('autoread', S.autoread); });
-  cmd.focus();
+  keys.focus();
 }
 if (window.Chess) boot(); else window.addEventListener('chessready', boot, { once: true });
 </script>
