@@ -85,6 +85,25 @@ button.btn:disabled { opacity: .5; cursor: default; }
 .board .hl::after { content: ""; position: absolute; inset: 0; background: var(--hl); }
 .board span { position: relative; z-index: 1; }
 .pc-w { color: #fff; -webkit-text-stroke: 1.3px #1a1a1a; paint-order: stroke fill; } .pc-b { color: #161616; }
+.thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
+.thumb { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font: 600 .85rem var(--font-body); cursor: pointer; }
+.thumb canvas { width: 96px; height: 96px; background: #fff; }
+.thumb.cur { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.thumb.hecho { opacity: .6; }
+.revgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+@media (max-width: 760px) { .revgrid { grid-template-columns: minmax(0, 1fr); } }
+.revgrid figure { margin: 0; } .revgrid figure canvas { width: 100%; height: auto; background: #fff; border: 1px solid var(--line); display: block; }
+.revgrid figcaption { font-size: .9rem; color: var(--muted); margin-top: 4px; }
+.board.edit div { cursor: pointer; }
+.board.edit .duda { box-shadow: inset 0 0 0 4px #f29a1a; }
+.board.edit .elegida { box-shadow: inset 0 0 0 4px var(--accent); }
+.picker { display: flex; flex-wrap: wrap; gap: 4px; }
+.picker button { font-size: 26px; line-height: 1; width: 44px; height: 44px; border-radius: 6px; border: 1px solid var(--line); background: var(--sq-dark); cursor: pointer; font-family: "Segoe UI Symbol", "DejaVu Sans", "Noto Sans Symbols 2", serif; }
+.picker button.vacia { font: 700 .8rem var(--font-body); width: auto; padding: 0 10px; color: #15201d; background: var(--sq-light); }
+.pagina { position: relative; display: inline-block; max-width: 100%; touch-action: none; }
+.pagina canvas { max-width: 100%; height: auto; display: block; border: 1px solid var(--line); cursor: crosshair; }
+.pagina .sel { position: absolute; border: 3px solid var(--accent); background: var(--sel); pointer-events: none; }
+.aviso { border-left: 4px solid #f29a1a; padding: 6px 10px; background: var(--sel); margin: 0; }
 .moves { display: flex; flex-wrap: wrap; gap: 4px; max-height: 260px; overflow-y: auto; padding: 2px; }
 .mv { font: 600 .95rem var(--font-mono); padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
 .mv.cur { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
@@ -155,9 +174,36 @@ button.btn:disabled { opacity: .5; cursor: default; }
           <div class="chaps" id="lchaps"></div>
           <div>
             <label for="imp">Agregar capítulos</label>
-            <textarea id="imp" placeholder="Pegá un link de Lichess (partida, estudio o capítulo de estudio), un PGN o un FEN"></textarea>
+            <textarea id="imp" placeholder="Pegá un link de Lichess (partida, estudio o capítulo de estudio), un PGN, un FEN o una imagen"></textarea>
             <p class="hint">Un estudio de Lichess trae todos sus capítulos con los comentarios. En las lecciones interactivas, las jugadas del lado del alumno quedan como preguntas.</p>
-            <div class="row" style="margin-top: 8px"><button class="btn primary" id="impgo">Agregar</button><button class="btn" id="impstart">Posición inicial</button></div>
+            <div class="row" style="margin-top: 8px"><button class="btn primary" id="impgo">Agregar</button><button class="btn" id="impstart">Posición inicial</button><button class="btn" id="impimg">Desde imagen o PDF</button></div>
+            <input type="file" id="impfile" accept="image/*,application/pdf" hidden>
+            <p class="hint">También podés pegar una foto o captura en el cuadro con Ctrl+V. Los diagramas se leen con IA y después los revisás vos.</p>
+          </div>
+        </div>
+        <div class="panel stack" id="pdiag" hidden>
+          <div class="row"><h2 style="margin: 0; flex: 1">Diagramas · <span id="dgnom"></span></h2><button class="btn" id="dgcerrar">Volver al capítulo</button></div>
+          <p class="muted" id="dgestado" role="status" style="margin: 0"></p>
+          <div class="thumbs" id="dglista"></div>
+          <div class="row"><button class="btn" id="dgmas" hidden>Buscar en más páginas</button><button class="btn" id="dgmano">Marcar un tablero a mano</button></div>
+          <div id="dgmanual" class="stack" hidden>
+            <div class="row"><label for="dgpag" style="margin: 0">Página</label><input type="number" id="dgpag" min="1" value="1" style="width: 90px"><span class="hint" style="margin: 0">Arrastrá un rectángulo justo sobre el borde del tablero.</span></div>
+            <div class="pagina" id="dgpagina"><canvas id="dgcanvas"></canvas><div class="sel" id="dgsel" hidden></div></div>
+          </div>
+          <div id="dgrev" class="stack" hidden>
+            <div class="revgrid">
+              <figure><canvas id="dgorig"></canvas><figcaption id="dgorigcap">Diagrama original</figcaption></figure>
+              <div class="stack">
+                <div class="board edit" id="dgtab" role="grid" aria-label="Posición leída: tocá una casilla para cambiarla"></div>
+                <div class="picker" id="dgpicker" hidden></div>
+              </div>
+            </div>
+            <div id="dgavisos" class="stack"></div>
+            <div class="row">
+              <div style="flex: 2 1 240px"><label for="dgtitulo">Título del capítulo</label><input type="text" id="dgtitulo" maxlength="200"></div>
+              <div style="flex: 1 1 160px"><label for="dgturno">Juegan</label><select id="dgturno"><option value="w">Blancas</option><option value="b">Negras</option></select></div>
+            </div>
+            <div class="row"><button class="btn primary" id="dgagregar">Agregar como capítulo</button><button class="btn" id="dgreleer">Leer de nuevo</button></div>
           </div>
         </div>
         <div class="panel stack" id="pchap">
@@ -213,6 +259,7 @@ button.btn:disabled { opacity: .5; cursor: default; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 <script src="js/pgn.js"></script>
 <script src="js/datos.js"></script>
+<script src="js/diagrama.js"></script>
 <script>
 var $ = function (id) { return document.getElementById(id); };
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -394,6 +441,7 @@ $('volver').onclick = function () { guardar().then(function () { ESTADO.clase = 
 function abrirEditor(c) {
   ESTADO.clase = c; ESTADO.ci = 0; ESTADO.ply = 0; sucio = false;
   $('ctitulo').value = c.titulo; $('guardado').textContent = '';
+  DG = null; show('pdiag', false); show('pchap', true);
   pestaña('edit'); pintarEditor();
   if (!ESTADO.clases.some(function (x) { return x.id === c.id; })) cambio();
 }
@@ -476,6 +524,148 @@ $('impstart').onclick = function () {
   caps.push({ id: Datos.nuevoId(), titulo: 'Capítulo ' + (caps.length + 1), fen: PGN.START, jugadas: [], notas: {}, lado: 'w' });
   ESTADO.ci = caps.length - 1; ESTADO.ply = 0; cambio(); pintarEditor();
 };
+
+// ---------- diagramas desde una imagen o un PDF ----------
+// La IA lee cada diagrama (js/diagrama.js); el profesor lo revisa sobre el tablero antes de agregarlo.
+var DG = null, PIEZAS = 'KQRBNPkqrbnp', NOMBRE_PIEZA = { K: 'Rey blanco', Q: 'Dama blanca', R: 'Torre blanca', B: 'Alfil blanco', N: 'Caballo blanco', P: 'Peón blanco',
+  k: 'Rey negro', q: 'Dama negra', r: 'Torre negra', b: 'Alfil negro', n: 'Caballo negro', p: 'Peón negro' };
+function glifo(ch) { return ch === '.' ? '' : '<span class="pc-' + (ch === ch.toUpperCase() ? 'w' : 'b') + '">' + GLYPH[ch.toLowerCase()] + '︎</span>'; }
+function abrirDiagramas(f) {
+  DG = { doc: null, paginas: {}, hasta: 0, lista: [], cur: -1, filas: null, dudas: [], elegida: null, pedido: 0 };
+  show('pchap', false); show('pdiag', true); show('dgrev', false); show('dgmanual', false); show('dgmas', false);
+  $('dglista').innerHTML = ''; $('dgnom').textContent = f.name || 'imagen pegada'; $('dgestado').textContent = 'Abriendo…';
+  Diagrama.abrir(f).then(function (doc) { DG.doc = doc; $('dgpag').max = doc.n; return escanear(10); })
+    .catch(function (e) { $('dgestado').textContent = e.message; });
+}
+function pagina(i) { return DG.paginas[i] ? Promise.resolve(DG.paginas[i]) : DG.doc.pagina(i); }
+function escanear(cuantas) {
+  var d = DG, fin = Math.min(d.doc.n, d.hasta + cuantas);
+  function sig(i) {
+    if (i > fin || d !== DG) return Promise.resolve();
+    $('dgestado').textContent = 'Buscando tableros en la página ' + i + (d.doc.n > 1 ? ' de ' + d.doc.n : '') + '…';
+    return d.doc.pagina(i).then(function (c) {
+      var cajas = Diagrama.buscar(c);
+      if (cajas.length) d.paginas[i] = c;
+      cajas.forEach(function (k) { d.lista.push({ pag: i, caja: k }); });
+      d.hasta = i; pintarListaDiagramas();
+      return sig(i + 1);
+    });
+  }
+  return sig(d.hasta + 1).then(function () {
+    if (d !== DG) return;
+    var n = d.lista.length, pags = d.doc.n > 1 ? ' en las páginas 1 a ' + d.hasta + (d.hasta < d.doc.n ? ' de ' + d.doc.n : '') : '';
+    $('dgestado').textContent = n ? 'Encontré ' + (n === 1 ? 'un diagrama' : n + ' diagramas') + pags + '. Elegí uno para leerlo.' :
+      'No encontré ningún tablero' + pags + '. Podés marcarlo a mano.';
+    show('dgmas', d.hasta < d.doc.n);
+    if (n === 1 && d.cur < 0) elegirDiagrama(0);
+  });
+}
+function pintarListaDiagramas() {
+  var box = $('dglista'); box.innerHTML = '';
+  DG.lista.forEach(function (it, i) {
+    var b = document.createElement('button'); b.className = 'thumb' + (i === DG.cur ? ' cur' : '') + (it.hecho ? ' hecho' : ''); b.dataset.i = i;
+    var t = document.createElement('canvas'); t.width = t.height = 96;
+    var src = DG.paginas[it.pag]; if (src) t.getContext('2d').drawImage(src, it.caja.x, it.caja.y, it.caja.w, it.caja.h, 0, 0, 96, 96);
+    b.appendChild(t);
+    b.appendChild(document.createTextNode((it.hecho ? '✓ ' : '') + 'Diagrama ' + (i + 1) + (DG.doc && DG.doc.n > 1 ? ' · pág. ' + it.pag : '')));
+    box.appendChild(b);
+  });
+}
+$('dglista').onclick = function (e) { var b = e.target.closest('.thumb'); if (b) elegirDiagrama(+b.dataset.i); };
+function elegirDiagrama(i) {
+  var it = DG.lista[i], pedido = ++DG.pedido; DG.cur = i; DG.elegida = null;
+  pintarListaDiagramas(); show('dgrev', false); show('dgmanual', false);
+  $('dgestado').textContent = 'Leyendo el diagrama ' + (i + 1) + '… (tarda unos segundos)';
+  pagina(it.pag).then(function (c) {
+    DG.paginas[it.pag] = c;
+    var o = Diagrama.recorte(c, it.caja, false), dst = $('dgorig'); dst.width = o.width; dst.height = o.height; dst.getContext('2d').drawImage(o, 0, 0);
+    return Diagrama.leer(c, it.caja);
+  }).then(function (r) {
+    if (pedido !== DG.pedido) return;
+    DG.res = r; DG.filas = r.filas.map(function (s) { return s.split(''); }); DG.dudas = r.dudas.slice();
+    $('dgtitulo').value = r.titulo || 'Diagrama ' + (i + 1);
+    $('dgturno').value = r.turno === 'b' ? 'b' : 'w';
+    $('dgorigcap').textContent = 'Diagrama original' + (r.girado ? ' (estaba con las negras abajo; a la derecha lo ves con las blancas abajo)' : '');
+    $('dgestado').textContent = r.fuente === 'ia' ? 'Listo. Compará con el original y corregí lo que haga falta.' : 'No se pudo leer con IA.';
+    show('dgrev', true); pintarRevision();
+  }).catch(function (e) { if (pedido === DG.pedido) $('dgestado').textContent = e.message; });
+}
+function pintarRevision() {
+  var html = '';
+  for (var r = 0; r < 8; r++) for (var f = 0; f < 8; f++) {
+    var sq = 'abcdefgh'[f] + (8 - r);
+    html += '<div role="gridcell" data-r="' + r + '" data-f="' + f + '" aria-label="' + sq + '" class="' + ((r + f) % 2 ? 'd' : 'l') +
+      (DG.dudas.indexOf(sq) >= 0 ? ' duda' : '') + (DG.elegida === sq ? ' elegida' : '') + '">' + glifo(DG.filas[r][f]) + '</div>';
+  }
+  $('dgtab').innerHTML = html;
+  var av = [], r0 = DG.res, txt = DG.filas.map(function (x) { return x.join(''); }).join('');
+  if (r0.aviso) av.push(r0.aviso);
+  if (DG.dudas.length) av.push('Revisá las casillas marcadas en naranja: ' + DG.dudas.join(', ') + '. Tocá una para cambiar la pieza, o elegí la misma pieza para confirmarla.');
+  if (r0.turno === '?') av.push('El diagrama no dice quién juega: elegilo abajo.');
+  var kb = (txt.match(/K/g) || []).length, kn = (txt.match(/k/g) || []).length;
+  if (kb !== 1 || kn !== 1) av.push('Tiene que haber un rey de cada color (ahora hay ' + kb + ' blanco' + (kb === 1 ? '' : 's') + ' y ' + kn + ' negro' + (kn === 1 ? '' : 's') + ').');
+  $('dgavisos').innerHTML = av.map(function (t) { return '<p class="aviso">' + esc(t) + '</p>'; }).join('');
+}
+$('dgtab').onclick = function (e) {
+  var d = e.target.closest('[data-r]'); if (!d) return;
+  DG.elegida = 'abcdefgh'[+d.dataset.f] + (8 - +d.dataset.r); DG.er = +d.dataset.r; DG.ef = +d.dataset.f;
+  $('dgpicker').innerHTML = '<button class="vacia" data-p=".">Vacía</button>' + PIEZAS.split('').map(function (p) { return '<button data-p="' + p + '" aria-label="' + NOMBRE_PIEZA[p] + '" title="' + NOMBRE_PIEZA[p] + '">' + glifo(p) + '</button>'; }).join('');
+  show('dgpicker', true); pintarRevision();
+};
+$('dgpicker').onclick = function (e) {
+  var b = e.target.closest('[data-p]'); if (!b) return;
+  DG.filas[DG.er][DG.ef] = b.dataset.p;
+  DG.dudas = DG.dudas.filter(function (s) { return s !== DG.elegida; });
+  DG.elegida = null; show('dgpicker', false); pintarRevision();
+};
+$('dgagregar').onclick = function () {
+  var filas = DG.filas.map(function (x) { return x.join(''); }), txt = filas.join('');
+  if ((txt.match(/K/g) || []).length !== 1 || (txt.match(/k/g) || []).length !== 1) return status('Antes de agregarlo, dejá un rey blanco y un rey negro.', true);
+  var turno = $('dgturno').value, fen = Diagrama.armarFen(filas, turno), v = new Chess().validate_fen(fen);
+  if (!v.valid) return status('La posición no es válida: ' + v.error, true);
+  var caps = ESTADO.clase.capitulos, it = DG.lista[DG.cur];
+  caps.push({ id: Datos.nuevoId(), titulo: $('dgtitulo').value.trim() || 'Diagrama', fen: fen, jugadas: [], notas: {}, lado: turno });
+  ESTADO.ci = caps.length - 1; ESTADO.ply = 0; it.hecho = true; cambio(); pintarEditor();
+  show('pchap', false);
+  pintarListaDiagramas(); show('dgrev', false);
+  var quedan = DG.lista.some(function (x) { return !x.hecho; });
+  $('dgestado').textContent = 'Capítulo agregado: ' + caps[ESTADO.ci].titulo + '.' + (quedan ? ' Elegí el siguiente diagrama, o volvé al capítulo para agregarle comentarios y audios.' : '');
+  status('Capítulo agregado.');
+};
+$('dgreleer').onclick = function () { elegirDiagrama(DG.cur); };
+$('dgmas').onclick = function () { escanear(10); };
+$('dgcerrar').onclick = function () { DG = null; show('pdiag', false); show('pchap', true); pintarEditor(); };
+// Marcar a mano: arrastrar un rectángulo sobre la página.
+function mostrarPagina(i) {
+  i = Math.max(1, Math.min(DG.doc.n, i || 1)); $('dgpag').value = i; show('dgsel', false);
+  pagina(i).then(function (c) { DG.paginas[i] = c; DG.pagManual = i; var v = $('dgcanvas'); v.width = c.width; v.height = c.height; v.getContext('2d').drawImage(c, 0, 0); });
+}
+$('dgmano').onclick = function () {
+  if (!DG || !DG.doc) return;
+  show('dgmanual', true); show('dgrev', false);
+  mostrarPagina(DG.cur >= 0 ? DG.lista[DG.cur].pag : 1);
+};
+$('dgpag').onchange = function () { mostrarPagina(+$('dgpag').value); };
+(function () {
+  var v = $('dgcanvas'), ini = null;
+  function punto(e) { var b = v.getBoundingClientRect(); return { x: (e.clientX - b.left) * v.width / b.width, y: (e.clientY - b.top) * v.height / b.height, bx: e.clientX - b.left, by: e.clientY - b.top }; }
+  function marco(a, b) {
+    var s = $('dgsel'); s.hidden = false;
+    s.style.left = Math.min(a.bx, b.bx) + 'px'; s.style.top = Math.min(a.by, b.by) + 'px';
+    s.style.width = Math.abs(a.bx - b.bx) + 'px'; s.style.height = Math.abs(a.by - b.by) + 'px';
+  }
+  v.addEventListener('pointerdown', function (e) { ini = punto(e); v.setPointerCapture(e.pointerId); });
+  v.addEventListener('pointermove', function (e) { if (ini) marco(ini, punto(e)); });
+  v.addEventListener('pointerup', function (e) {
+    if (!ini) return; var p = punto(e), a = ini; ini = null;
+    var caja = { x: Math.round(Math.min(a.x, p.x)), y: Math.round(Math.min(a.y, p.y)), w: Math.round(Math.abs(a.x - p.x)), h: Math.round(Math.abs(a.y - p.y)) };
+    if (caja.w < 40 || caja.h < 40) return;
+    DG.lista.push({ pag: DG.pagManual, caja: Diagrama.ajustar(DG.paginas[DG.pagManual], caja) }); elegirDiagrama(DG.lista.length - 1);
+  });
+})();
+$('impimg').onclick = function () { $('impfile').click(); };
+$('impfile').onchange = function () { var f = this.files[0]; this.value = ''; if (f) abrirDiagramas(f); };
+$('imp').addEventListener('paste', function (e) { var f = Diagrama.delPortapapeles(e); if (f) { e.preventDefault(); abrirDiagramas(f); } });
 
 $('chtitulo').oninput = function () { cap().titulo = $('chtitulo').value.trim() || 'Sin título'; cambio(); pintarListaCapsSolo(); };
 function pintarListaCapsSolo() { var b = document.querySelector('.chap.cur > button'); if (b) b.textContent = (ESTADO.ci + 1) + '. ' + cap().titulo; }

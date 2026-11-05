@@ -29,6 +29,15 @@
     return m;
   }
 
+  function errorIA(m) {
+    if (/sin_sesion/.test(m)) return 'Para leer imágenes con IA hay que entrar: el profesor con su cuenta, el alumno con el link de su profesor.';
+    if (/sin_permiso_ia/.test(m)) return 'Esta cuenta no puede usar la lectura con IA. El alumno tiene que entrar con el link de su profesor.';
+    if (/limite_ia/.test(m)) return 'Se llegó al máximo de lecturas con IA por hoy. Mañana se puede seguir.';
+    if (/sin_clave_ia/.test(m)) return 'Falta configurar la clave de la IA en Supabase (secreto ANTHROPIC_API_KEY).';
+    if (/Failed to send|Function not found|404/i.test(m)) return 'Falta instalar la función leer-diagrama en Supabase.';
+    return m;
+  }
+
   // ======================= modo nube (Supabase) =======================
   function nube() {
     var sb = null;
@@ -145,6 +154,22 @@
     };
     D.guardarProgreso = function (alumnoId, claseId, datos) {
       return q(sb.from('progreso').upsert({ alumno_id: alumnoId, clase_id: claseId, datos: datos, actualizado: new Date().toISOString() }));
+    };
+
+    // Lectura de un diagrama con IA (función "leer-diagrama" de Supabase).
+    D.leerDiagrama = function (base64, tipo) {
+      return cli().then(function (sb) {
+        return sb.auth.getSession().then(function (r) {
+          if (!r.data.session) throw new Error('sin_sesion');
+          return sb.functions.invoke('leer-diagrama', { body: { imagen: base64, tipo: tipo } });
+        });
+      }).then(function (r) {
+        if (!r.error) return r.data;
+        var ctx = r.error.context;
+        return (ctx && ctx.json ? ctx.json().catch(function () { return {}; }) : Promise.resolve({})).then(function (j) {
+          throw new Error(j.error || r.error.message || 'No se pudo leer la imagen.');
+        });
+      }).catch(function (e) { fail(new Error(errorIA(e.message))); });
     };
   }
 
@@ -265,6 +290,8 @@
     D.guardarProgreso = function (alumnoId, claseId, datos) {
       return tx(function (d) { d.progreso[alumnoId] = d.progreso[alumnoId] || {}; datos = copia(datos); datos.fecha = now(); d.progreso[alumnoId][claseId] = datos; });
     };
+    // En el modo demo no hay IA: la página usa solo el lector propio.
+    D.leerDiagrama = function () { return Promise.reject(new Error('En el modo demo no hay lectura con IA.')); };
   }
 
   if (demo) local(); else nube();

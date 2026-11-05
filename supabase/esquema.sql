@@ -182,3 +182,40 @@ drop policy if exists "audios: alumno escucha" on storage.objects;
 create policy "audios: alumno escucha" on storage.objects for select to authenticated
   using (bucket_id = 'audios' and (storage.foldername(name))[1] in
          (select a.profesor_id::text from public.alumnos a where a.id in (select public.mis_alumnos())));
+
+-- ---------- lectura de diagramas con IA ----------
+-- La función de Supabase "leer-diagrama" llama a usar_ia() antes de cada lectura:
+-- solo pueden usarla los profesores y los alumnos vinculados, con un tope diario.
+
+create table if not exists public.uso_ia (
+  usuario_id uuid not null references auth.users (id) on delete cascade,
+  dia        date not null default current_date,
+  cantidad   int  not null default 0,
+  primary key (usuario_id, dia)
+);
+alter table public.uso_ia enable row level security;
+revoke all on public.uso_ia from anon, authenticated;
+
+create or replace function public.usar_ia() returns int
+language plpgsql security definer set search_path = public as $$
+declare
+  tope int;
+  n int;
+begin
+  if auth.uid() is null then raise exception 'sin_sesion'; end if;
+  if exists (select 1 from profesores where id = auth.uid())
+     and coalesce((auth.jwt()->>'is_anonymous')::boolean, false) = false then
+    tope := 150;
+  elsif exists (select 1 from dispositivos where usuario_id = auth.uid()) then
+    tope := 40;
+  else
+    raise exception 'sin_permiso_ia';
+  end if;
+  insert into uso_ia (usuario_id, dia, cantidad) values (auth.uid(), current_date, 1)
+  on conflict (usuario_id, dia) do update set cantidad = uso_ia.cantidad + 1
+  returning cantidad into n;
+  if n > tope then raise exception 'limite_ia'; end if;
+  return tope - n;
+end $$;
+revoke execute on function public.usar_ia() from public, anon;
+grant execute on function public.usar_ia() to authenticated;

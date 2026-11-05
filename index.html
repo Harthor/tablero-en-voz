@@ -180,7 +180,7 @@ th { color: var(--muted); font-weight: 700; font-size: .85rem; text-transform: u
         <summary>Cargar partida o posición</summary>
         <div class="dbody">
           <div class="field">
-            <span>Pegá un link de Lichess, un FEN o un PGN</span>
+            <span>Pegá un link de Lichess, un FEN, un PGN o una imagen</span>
             <textarea id="loadbox" spellcheck="false" aria-label="Link de Lichess, FEN o PGN"></textarea>
           </div>
           <div class="row">
@@ -189,12 +189,18 @@ th { color: var(--muted); font-weight: 700; font-size: .85rem; text-transform: u
             <button class="btn" id="dailybtn">Puzzle diario de Lichess</button>
           </div>
           <div class="row">
+            <button class="btn" id="fotobtn">Leer foto, captura o PDF</button>
+            <input type="file" id="fotofile" accept="image/*,application/pdf" hidden aria-label="Foto, captura o PDF con un diagrama">
+          </div>
+          <div class="quick" id="diaglist" aria-label="Diagramas encontrados" hidden></div>
+          <div class="row">
             <div class="field">
               <span>Seguir la partida en curso de un usuario de Lichess</span>
               <input type="text" id="userbox" placeholder="nombre de usuario" autocomplete="off" spellcheck="false">
             </div>
             <button class="btn" id="userbtn" style="align-self:flex-end">Seguir</button>
           </div>
+          <p class="hint">Para un diagrama de un libro, una foto o una captura: tecla <b>f</b>, el botón “Leer foto”, o pegala con Ctrl+V. Se lee con IA; si tenés cuenta de alumno, entrá con el link de tu profesor.</p>
           <p class="hint">Los links de análisis o editor de Lichess (los que traen el FEN en la dirección) funcionan siempre. Los links a partidas, el puzzle diario y el seguimiento en vivo necesitan conectarse a Lichess: si esta página no puede, copiá el PGN desde “Compartir y exportar” en Lichess y pegalo acá.</p>
         </div>
       </details>
@@ -240,6 +246,7 @@ th { color: var(--muted); font-weight: 700; font-size: .85rem; text-transform: u
 </div>
 
 <script src="js/datos.js"></script>
+<script src="js/diagrama.js"></script>
 <script>
 // Load chess.js with a fallback CDN.
 (function () {
@@ -904,6 +911,62 @@ function handleLoad(txt) {
   }
 }
 
+// ---------- diagramas: foto, captura o PDF ----------
+// La IA lee la posición (js/diagrama.js) y el lector propio la controla casilla por casilla.
+var DIAG = { lista: [], paginas: {} };
+function abrirFoto(f) {
+  DIAG = { lista: [], paginas: {} };
+  say('Buscando el tablero en ' + (/pdf/i.test(f.type + f.name) ? 'el PDF' : 'la imagen') + '…');
+  Diagrama.abrir(f).then(function (doc) {
+    var fin = Math.min(doc.n, 20);
+    function sig(i) {
+      if (i > fin) return Promise.resolve();
+      return doc.pagina(i).then(function (c) {
+        var cajas = Diagrama.buscar(c);
+        if (cajas.length) DIAG.paginas[i] = c;
+        cajas.forEach(function (k) { DIAG.lista.push({ pag: i, caja: k }); });
+        return sig(i + 1);
+      });
+    }
+    return sig(1);
+  }).then(function () {
+    var n = DIAG.lista.length, box = $('diaglist');
+    box.innerHTML = DIAG.lista.map(function (it, i) { return '<button class="btn" data-cmd="diagrama ' + (i + 1) + '">Diagrama ' + (i + 1) + (it.pag > 1 ? ' · página ' + it.pag : '') + '</button>'; }).join('');
+    box.hidden = n < 2;
+    if (!n) return say('No encontré ningún tablero. Probá con una imagen donde se vea el tablero entero.', { err: true });
+    leerDiagrama(0, n > 1 ? 'Encontré ' + n + ' diagramas. Leo el primero; para otro escribí “diagrama 2”, o usá los botones de abajo. ' : '');
+  }).catch(function (e) { say(e.message, { err: true }); });
+}
+function leerDiagrama(i, pre) {
+  var it = DIAG.lista[i];
+  if (!it) return say(DIAG.lista.length ? 'Hay ' + DIAG.lista.length + ' diagramas; elegí uno de esos.' : 'Primero cargá una foto o un PDF con la tecla f.', { err: true });
+  say((pre || '') + 'Leyendo el diagrama' + (DIAG.lista.length > 1 ? ' ' + (i + 1) : '') + '. Tarda unos segundos.');
+  Diagrama.leer(DIAG.paginas[it.pag], it.caja).then(function (r) {
+    if (r.fuente !== 'ia') return say('No pude leer el diagrama. ' + r.error, { err: true });
+    var txt = r.filas.join('');
+    if ((txt.match(/K/g) || []).length !== 1 || (txt.match(/k/g) || []).length !== 1 || !new Chess().validate_fen(r.fen).valid)
+      return say('Leí el diagrama, pero la posición que me salió no es válida. Pedile a tu profesor que lo cargue desde su panel.', { err: true });
+    stopLive(true);
+    setGame(r.fen, [], {}, r.titulo || 'Diagrama');
+    render();
+    var t = ['Posición del diagrama cargada.'];
+    if (r.titulo) t.push(r.titulo + '.');
+    t.push(r.turno === '?' ? 'El diagrama no dice quién juega: puse que juegan las blancas. Para cambiarlo escribí “cambiar turno”.' : statusText(curChess()));
+    if (r.dudas.length) t.push('Ojo: puedo haberme equivocado en ' + joinY(r.dudas) + '.');
+    if (r.aviso) t.push(r.aviso);
+    t.push('Apretá b, n o t para escucharla.');
+    say(t.join(' '));
+  }, function (e) { say(e.message, { err: true }); });
+}
+function cambiarTurno(out) {
+  if (G.main.length || inVar() || G.lec || G.puzzle) return out('El turno solo se puede cambiar en una posición suelta, sin jugadas.');
+  var f = curChess().fen().split(' '); f[1] = f[1] === 'w' ? 'b' : 'w'; f[3] = '-';
+  var nf = f.join(' ');
+  if (!new Chess().validate_fen(nf).valid) return out('No se puede: esa posición no es válida con el otro turno.');
+  setGame(nf, [], G.headers, G.title); render();
+  out('Listo. ' + statusText(curChess()));
+}
+
 // ---------- clases del profesor ----------
 // L.clases viene de Datos (js/datos.js); el formato de cada capítulo está descrito en js/pgn.js.
 var L = { alumno: null, clases: [], prog: {}, ci: -1, guardar: null };
@@ -1132,6 +1195,9 @@ var HELP = [
   ['girar', 'Cambia el lado desde el que se lee el tablero.'],
   ['vivo · parar', 'Seguir en vivo la partida de Lichess cargada, o dejar de seguirla.'],
   ['fen', 'Muestra el FEN de la posición actual.'],
+  ['f · foto', 'Lee una foto, una captura o un PDF con un diagrama (también se puede pegar con Ctrl+V).'],
+  ['diagrama 2', 'Si la imagen o el PDF tenía varios diagramas, lee otro.'],
+  ['cambiar turno', 'En una posición suelta, cambia de quién es el turno.'],
   ['nueva', 'Vuelve a la posición inicial.'],
   ['r · repetir', 'Repite lo último que se dijo (Escape calla).'],
   ['más lento · más rápido', 'Cambia la velocidad de la voz.'],
@@ -1145,6 +1211,7 @@ function helpText() {
     'Casillas: “e4” con signo de pregunta para saber qué hay, “ve f3” para ver una pieza, “at e5” para saber quién controla una casilla. ' +
     'Análisis: “amenazas”, “material”, “estado”, “jugadas”. ' +
     'Partida: “s” siguiente, “a” anterior, “inicio”, “fin”, “ir 15”, “lista”, “u” última jugada. ' +
+    'Diagramas: “foto” para leer una foto, captura o PDF, “diagrama 2” para otro de la misma página, “cambiar turno”. ' +
     'Para jugar escribí la jugada, por ejemplo C f 3 o e 2 e 4. “z” deshace, “volver” sale de la variante. ' +
     '“r” repite, Escape calla, “más lento” y “más rápido” cambian la voz. ' +
     'Fuera del campo de texto no hace falta Enter: cada tecla es un comando, y la h dice la lista.';
@@ -1153,13 +1220,14 @@ function helpText() {
 var KEYS = {
   s: 's', a: 'a', b: 'b', n: 'n', t: 't', u: 'u', e: 'estado', m: 'material', x: 'amenazas', j: 'jugadas', l: 'lista',
   r: 'r', z: 'z', v: 'volver', g: 'girar', p: 'pista', '+': 'mas rapido', '-': 'mas lento',
-  k: 'clase siguiente', '.': 'capitulo siguiente', ',': 'capitulo anterior', d: 'donde estoy', o: 'comentario',
+  f: 'foto', k: 'clase siguiente', '.': 'capitulo siguiente', ',': 'capitulo anterior', d: 'donde estoy', o: 'comentario',
   ArrowRight: 's', ArrowLeft: 'a', Home: 'inicio', End: 'fin'
 };
 function keyHelpText() {
   return 'Teclas. Piezas: b blancas, n negras, t tablero entero, un número del 1 al 8 lee esa fila, c y una letra lee esa columna. ' +
     'Partida: s o flecha derecha siguiente, a o flecha izquierda anterior, Inicio y Fin, u última jugada, l lista de jugadas. ' +
     'Análisis: e estado, m material, x amenazas, j jugadas legales. ' +
+    'f lee una foto, una captura o un PDF con un diagrama. ' +
     'Clases de tu profesor: k abre la siguiente clase, punto pasa al capítulo siguiente y coma al anterior, d dice dónde estás, o repite el comentario y el audio del profesor. ' +
     'En una pregunta, p da una pista; la tercera vez te dice la respuesta. ' +
     'r repite, espacio o Escape callan, más y menos cambian la velocidad. g gira el tablero, z deshace, v vuelve de la variante. ' +
@@ -1175,6 +1243,9 @@ function run(raw) {
 
   if (/^(ayuda|help|h|\?)$/.test(c)) return out(helpText());
   if (clasesCmd(c, out)) return;
+  if (/^(f|foto|imagen|pdf|leer foto|leer imagen|diagrama)$/.test(c)) { $('fotofile').click(); return out('Elegí la foto, la captura o el PDF.'); }
+  if ((m = c.match(/^diagrama ([0-9]+)$/))) return leerDiagrama(+m[1] - 1);
+  if (/^(cambiar turno|cambia turno|cambio de turno)$/.test(c)) return cambiarTurno(out);
   if (/^(b|blancas|piezas blancas)$/.test(c)) return out(listPieces(map, 'w'));
   if (/^(n|negras|piezas negras)$/.test(c)) return out(listPieces(map, 'b'));
   if (/^(p|piezas)$/.test(c)) return out(listPieces(map, 'w') + '\n' + listPieces(map, 'b'));
@@ -1321,6 +1392,9 @@ function boot() {
   $('loadbtn').addEventListener('click', function () { handleLoad($('loadbox').value); });
   $('startbtn').addEventListener('click', function () { run('nueva'); });
   $('dailybtn').addEventListener('click', function () { loadPuzzle(); });
+  $('fotobtn').addEventListener('click', function () { $('fotofile').click(); });
+  $('fotofile').addEventListener('change', function () { var f = this.files[0]; this.value = ''; keys.focus(); if (f) abrirFoto(f); });
+  document.addEventListener('paste', function (e) { var f = Diagrama.delPortapapeles(e); if (f) { e.preventDefault(); abrirFoto(f); } });
   $('userbtn').addEventListener('click', function () { loadUser($('userbox').value); });
   $('userbox').addEventListener('keydown', function (e) { if (e.key === 'Enter') loadUser($('userbox').value); });
   $('ttson').addEventListener('change', function (e) { S.tts = e.target.checked; store('tts', S.tts); if (!S.tts) hush(); });
