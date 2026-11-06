@@ -207,15 +207,71 @@ var Diagrama = (function () {
     return filas;
   }
 
+  // ---------- control para tableros de color (capturas de Lichess, Chess.com, etc.) ----------
+  // El lector de libros separa claro y oscuro con un umbral fijo y en un tablero marrón o verde
+  // ve todo claro. Acá solo se mira dónde hay piezas: en cada casilla se toma el color de fondo
+  // (la mediana) y se cuenta cuánto se aparta el resto. Sirve para cualquier esquema de colores.
+  function bordesLisos(d, W, H) {
+    // Recorta tiras de un solo color pegadas al tablero (el marco o el fondo de la app).
+    function px(x, y) { var i = (y * W + x) * 4; return [d[i], d[i + 1], d[i + 2]]; }
+    function linea(fijo, vertical) {
+      var n = vertical ? H : W, s = [0, 0, 0], q = [0, 0, 0];
+      for (var k = 0; k < n; k++) { var p = vertical ? px(fijo, k) : px(k, fijo); for (var j = 0; j < 3; j++) { s[j] += p[j]; q[j] += p[j] * p[j]; } }
+      var m = s.map(function (v) { return v / n; }), dv = q.reduce(function (a, v, j) { return a + v / n - m[j] * m[j]; }, 0);
+      return { m: m, lisa: Math.sqrt(Math.max(0, dv)) < 12 };
+    }
+    // Una fila o columna que cruza el tablero nunca es lisa (alterna casillas claras y oscuras):
+    // se avanza desde cada borde mientras las líneas sean lisas, aunque cambien de tono (degradés).
+    var tope = Math.round(Math.min(W, H) * 0.08), k = { x0: 0, y0: 0, x1: W - 1, y1: H - 1 };
+    function recortar(lado) {
+      var vertical = lado === 'x0' || lado === 'x1', paso = lado === 'x0' || lado === 'y0' ? 1 : -1, ini = k[lado];
+      for (var i = 0; i <= tope && linea(ini + paso * i, vertical).lisa; i++);
+      if (i <= tope) k[lado] = ini + paso * i;
+    }
+    ['x0', 'x1', 'y0', 'y1'].forEach(recortar);
+    return k;
+  }
+  function ocupacionColor(c, caja) {
+    var d = c.getContext('2d', { willReadFrequently: true }).getImageData(caja.x, caja.y, caja.w, caja.h).data;
+    var b = bordesLisos(d, caja.w, caja.h), W = b.x1 - b.x0 + 1, H = b.y1 - b.y0 + 1;
+    if (W < 64 || H < 64 || W / H < 0.9 || W / H > 1.11) return null;
+    var cw = W / 8, ch = H / 8, mg = Math.max(2, Math.round(Math.min(cw, ch) * 0.1)), filas = [], fondos = [];
+    for (var r = 0; r < 8; r++) {
+      var fila = '';
+      for (var f = 0; f < 8; f++) {
+        var xa = b.x0 + Math.round(f * cw + mg), xb = b.x0 + Math.round((f + 1) * cw - mg);
+        var ya = b.y0 + Math.round(r * ch + mg), yb = b.y0 + Math.round((r + 1) * ch - mg);
+        var canales = [[], [], []];
+        for (var y = ya; y < yb; y++) for (var x = xa; x < xb; x++) { var i = (y * caja.w + x) * 4; canales[0].push(d[i]); canales[1].push(d[i + 1]); canales[2].push(d[i + 2]); }
+        var fondo = canales.map(function (v) { var s = v.slice().sort(function (p, q) { return p - q; }); return s[s.length >> 1]; });
+        var lejos = 0, n = canales[0].length;
+        for (var j = 0; j < n; j++) if (Math.abs(canales[0][j] - fondo[0]) + Math.abs(canales[1][j] - fondo[1]) + Math.abs(canales[2][j] - fondo[2]) > 90) lejos++;
+        fila += lejos / n > 0.08 ? '#' : '.';
+        fondos.push({ osc: (r + f) % 2 === 1, l: fondo[0] * 0.299 + fondo[1] * 0.587 + fondo[2] * 0.114 });
+      }
+      filas.push(fila);
+    }
+    // Tiene que parecer un tablero: las casillas de un color más claras que las del otro, casi siempre.
+    var claras = fondos.filter(function (z) { return !z.osc; }), oscuras = fondos.filter(function (z) { return z.osc; });
+    var media = function (a) { return a.reduce(function (s, z) { return s + z.l; }, 0) / a.length; };
+    var mc = media(claras), mo = media(oscuras), corte = (mc + mo) / 2, bien = 0;
+    fondos.forEach(function (z) { if ((z.osc ? z.l < corte : z.l > corte) === (mc > mo)) bien++; });
+    if (Math.abs(mc - mo) < 15 || bien < 56) return null;
+    return filas;
+  }
+
   // ---------- leer con IA + control ----------
   // Recorte que se manda a la IA: el tablero con un poco del texto de arriba y de abajo.
   function recorte(c, caja, conTexto) {
     var mx = conTexto ? caja.w * 0.06 : 0, arriba = conTexto ? caja.h * 0.45 : 0, abajo = conTexto ? caja.h * 0.18 : 0;
     var x0 = Math.max(0, Math.round(caja.x - mx)), y0 = Math.max(0, Math.round(caja.y - arriba));
     var x1 = Math.min(c.width, Math.round(caja.x + caja.w + mx)), y1 = Math.min(c.height, Math.round(caja.y + caja.h + abajo));
-    var esc = Math.min(1, 1000 / Math.max(x1 - x0, y1 - y0));
+    // Las imágenes grandes se achican a 1000 px; las chicas (una captura de 300 px) se agrandan a 800,
+    // porque con pocas decenas de píxeles por casilla la IA se puede saltear una pieza del borde.
+    var lado = Math.max(x1 - x0, y1 - y0), esc = lado > 1000 ? 1000 / lado : lado < 800 ? 800 / lado : 1;
     var t = document.createElement('canvas'); t.width = Math.round((x1 - x0) * esc); t.height = Math.round((y1 - y0) * esc);
     var x = t.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, t.width, t.height);
+    x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
     x.drawImage(c, x0, y0, x1 - x0, y1 - y0, 0, 0, t.width, t.height);
     return t;
   }
@@ -228,10 +284,19 @@ var Diagrama = (function () {
     var img = recorte(c, caja, !caja.entera).toDataURL('image/png').split(',')[1];
     return Datos.leerDiagrama(img, 'image/png').then(function (ia) {
       if (!ia || !filasValidas(ia.filas)) throw new Error('La IA devolvió una posición incompleta.');
-      var negrasAbajo = ia.abajo === 'negras', dif = [];
+      var negrasAbajo = ia.abajo === 'negras', dif = [], controlado = false;
       if (local) for (var r = 0; r < 8; r++) for (var f = 0; f < 8; f++) if (colorDe(ia.filas[r][f]) !== local[r][f]) dif.push(casilla(r, f, negrasAbajo));
       // Si casi nada coincide, el lector propio no entiende este estilo de dibujo: no se usa.
-      var controlado = !!local && dif.length <= 6;
+      controlado = !!local && dif.length <= 6;
+      // Si no sirvió (tablero de color), se controla al menos dónde hay piezas.
+      if (!controlado) {
+        var occ = ocupacionColor(c, caja);
+        if (occ) {
+          var difOcc = [];
+          for (r = 0; r < 8; r++) for (f = 0; f < 8; f++) if ((ia.filas[r][f] !== '.') !== (occ[r][f] === '#')) difOcc.push(casilla(r, f, negrasAbajo));
+          if (difOcc.length <= 6) { controlado = true; dif = difOcc; }
+        }
+      }
       var dudas = (ia.dudosas || []).filter(function (s) { return /^[a-h][1-8]$/.test(s); });
       if (controlado) dif.forEach(function (s) { if (dudas.indexOf(s) < 0) dudas.push(s); });
       var filas = negrasAbajo ? ia.filas.slice().reverse().map(function (s) { return s.split('').reverse().join(''); }) : ia.filas;
@@ -264,5 +329,5 @@ var Diagrama = (function () {
     return fen.split(' ')[0].split('/').map(function (s) { return s.replace(/\d/g, function (n) { return '.'.repeat(+n); }); });
   }
 
-  return { abrir: abrir, delPortapapeles: delPortapapeles, buscar: buscar, ajustar: ajustar, leerLocal: leerLocal, recorte: recorte, leer: leer, armarFen: armarFen, filasDeFen: filasDeFen };
+  return { abrir: abrir, delPortapapeles: delPortapapeles, buscar: buscar, ajustar: ajustar, leerLocal: leerLocal, ocupacionColor: ocupacionColor, recorte: recorte, leer: leer, armarFen: armarFen, filasDeFen: filasDeFen };
 })();
