@@ -1,3 +1,4 @@
+<html lang="es">
 <meta charset="utf-8">
 <title>Tablero en Voz</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -131,7 +132,7 @@ th { color: var(--muted); font-weight: 700; font-size: .85rem; text-transform: u
 
   <div class="grid">
     <section class="panel boardwrap" aria-label="Tablero visual">
-      <div class="board" id="board" role="grid" aria-label="Tablero. Cada casilla se lee al tocarla."></div>
+      <div class="board" id="board" role="group" aria-label="Tablero. Cada casilla se lee al tocarla."></div>
       <div class="navrow" aria-label="Navegación de la partida">
         <button class="btn" data-cmd="inicio" title="Inicio">⏮ Inicio</button>
         <button class="btn" data-cmd="a" title="Anterior (flecha izquierda)">◀ Anterior</button>
@@ -269,7 +270,7 @@ var START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 var NAMES = { k: ['rey', 'reyes', 'm'], q: ['dama', 'damas', 'f'], r: ['torre', 'torres', 'f'], b: ['alfil', 'alfiles', 'm'], n: ['caballo', 'caballos', 'm'], p: ['peón', 'peones', 'm'] };
 var VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
 var ORDER = ['k', 'q', 'r', 'b', 'n', 'p'];
-var ORTH = [[1, 0], [-1, 0], [0, 1], [0, -1]], DIAG = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+var ORTH = [[1, 0], [-1, 0], [0, 1], [0, -1]], DIAGONALES = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
 
 function adj(color, gender, plural) {
   var w = color === 'w';
@@ -304,10 +305,10 @@ function controlled(map, from) {
   switch (p.type) {
     case 'p': var dy = p.color === 'w' ? 1 : -1; [toSq(f - 1, r + dy), toSq(f + 1, r + dy)].forEach(function (s) { if (s) out.push(s); }); break;
     case 'n': step([[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]], false); break;
-    case 'k': step(ORTH.concat(DIAG), false); break;
-    case 'b': step(DIAG, true); break;
+    case 'k': step(ORTH.concat(DIAGONALES), false); break;
+    case 'b': step(DIAGONALES, true); break;
     case 'r': step(ORTH, true); break;
-    case 'q': step(ORTH.concat(DIAG), true); break;
+    case 'q': step(ORTH.concat(DIAGONALES), true); break;
   }
   return out;
 }
