@@ -44,6 +44,7 @@ body {
   padding-block: 20px 40px;
 }
 .wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.wrap > main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 20px; }
 h1 { font-size: 2rem; margin: 0; letter-spacing: -.01em; text-wrap: balance; }
 .sub { color: var(--muted); margin: 0; }
@@ -122,6 +123,7 @@ th { color: var(--muted); font-weight: 700; font-size: .85rem; text-transform: u
 </style>
 
 <div class="wrap">
+  <main>
   <header>
     <div>
       <h1>Tablero en Voz</h1>
@@ -193,7 +195,7 @@ th { color: var(--muted); font-weight: 700; font-size: .85rem; text-transform: u
             <button class="btn" id="fotobtn">Leer foto, captura o PDF</button>
             <input type="file" id="fotofile" accept="image/*,application/pdf" hidden aria-label="Foto, captura o PDF con un diagrama">
           </div>
-          <div class="quick" id="diaglist" aria-label="Diagramas encontrados" hidden></div>
+          <div class="quick" id="diaglist" role="group" aria-label="Diagramas encontrados" hidden></div>
           <div class="row">
             <div class="field">
               <span>Seguir la partida en curso de un usuario de Lichess</span>
@@ -243,6 +245,7 @@ th { color: var(--muted); font-weight: 700; font-size: .85rem; text-transform: u
       </details>
     </section>
   </div>
+  </main>
   <p class="hint">¿Sos profesor? <a href="profesor.html">Entrá al panel del profesor</a> para armar clases y seguir el progreso de tus alumnos.</p>
 </div>
 
